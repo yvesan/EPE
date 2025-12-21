@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EPE Card Pack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Russo+One&family=Noto+Sans+SC:wght@400;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Noto Sans SC"', 'sans-serif'],
+              comic: ['"Bangers"', 'cursive'],
+              tech: ['"Russo One"', 'sans-serif'],
+            },
+            colors: {
+              epe: {
+                black: '#0a0a0a',
+                gold: '#ffd700',
+                neon: '#00f3ff',
+                pink: '#ff0080',
+                yellow: '#fcee0a',
+              }
+            },
+            backgroundImage: {
+              'halftone': 'radial-gradient(circle, #333 1px, transparent 1.5px)',
+              'comic-burst': 'repeating-conic-gradient(#000 0deg 10deg, #111 10deg 20deg)',
+            },
+            boxShadow: {
+              'comic': '4px 4px 0px 0px rgba(0,0,0,1)',
+              'comic-lg': '8px 8px 0px 0px rgba(0,0,0,1)',
+              'comic-hover': '2px 2px 0px 0px rgba(0,0,0,1)',
+            }
+          },
+        },
+      }
+    </script>
+    <style>
+      body {
+        background-color: #121212;
+        color: white;
+        overflow-x: hidden;
+      }
+      /* Halftone Background Pattern */
+      .bg-comic-pattern {
+        background-color: #1a1a1a;
+        background-image: radial-gradient(#333 1px, transparent 1px);
+        background-size: 20px 20px;
+      }
+      
+      .perspective-1000 {
+        perspective: 1000px;
+      }
+      .perspective-origin-center {
+        perspective-origin: center center;
+      }
+      .transform-style-3d {
+        transform-style: preserve-3d;
+      }
+      .backface-hidden {
+        backface-visibility: hidden;
+      }
+      
+      /* Comic Speed Lines Animation */
+      @keyframes speed-lines {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+      .animate-spin-slow {
+        animation: speed-lines 20s linear infinite;
+      }
+
+      /* Jagged Tear Path */
+      .clip-jagged-bottom {
+        clip-path: polygon(0% 0%, 100% 0%, 100% 100%, 95% 90%, 90% 100%, 85% 90%, 80% 100%, 75% 90%, 70% 100%, 65% 90%, 60% 100%, 55% 90%, 50% 100%, 45% 90%, 40% 100%, 35% 90%, 30% 100%, 25% 90%, 20% 100%, 15% 90%, 10% 100%, 5% 90%, 0% 100%);
+      }
+      .clip-jagged-top {
+        clip-path: polygon(0% 0%, 100% 0%, 100% 85%, 95% 75%, 90% 85%, 85% 75%, 80% 85%, 75% 75%, 70% 85%, 65% 75%, 60% 85%, 55% 75%, 50% 85%, 45% 75%, 40% 85%, 35% 75%, 30% 85%, 25% 75%, 20% 85%, 15% 75%, 10% 85%, 5% 75%, 0% 85%);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "framer-motion": "https://aistudiocdn.com/framer-motion@^12.23.25",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.556.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
