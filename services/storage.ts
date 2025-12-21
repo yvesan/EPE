@@ -26,12 +26,13 @@ export const importPointsData = (data: {name: string, points: number}[]) => {
         // Normalize name: trim whitespace
         const cleanName = item.name.trim();
         if (cleanName) {
+            // 策略：覆盖更新积分，但不影响其他数据
             db[cleanName] = Number(item.points);
         }
     });
     savePointsDB(db);
     
-    // Also update current logged in user if applicable
+    // 同步当前登录用户（如果有）
     const currentUser = getUser();
     if (currentUser && db[currentUser.name] !== undefined) {
         currentUser.points = db[currentUser.name];
@@ -39,9 +40,43 @@ export const importPointsData = (data: {name: string, points: number}[]) => {
     }
 };
 
+// --- Full System Sync (For Cross-Device Support) ---
+
+export const exportFullSystemData = () => {
+    const data = {
+        pointsDB: getPointsDB(),
+        logs: getLogs(),
+        customLogo: localStorage.getItem(KEYS.CUSTOM_LOGO),
+        version: '1.0',
+        exportTime: Date.now()
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `EPE_系统数据全备份_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+};
+
+export const importFullSystemData = (jsonString: string): boolean => {
+    try {
+        const data = JSON.parse(jsonString);
+        if (!data.pointsDB || !data.logs) throw new Error("无效的备份文件");
+        
+        localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(data.pointsDB));
+        localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
+        if (data.customLogo) localStorage.setItem(KEYS.CUSTOM_LOGO, data.customLogo);
+        
+        return true;
+    } catch (e) {
+        console.error("Restore failed", e);
+        return false;
+    }
+};
+
 // --- User Management ---
 
-// Initial state for a new user
 export const initializeUser = (name: string): User => {
   const pointsDB = getPointsDB();
   const initialPoints = pointsDB[name] || 0;
@@ -61,7 +96,6 @@ export const getUser = (): User | null => {
   if (!data) return null;
   
   const user = JSON.parse(data);
-  // Always sync points with DB on get to ensure consistency
   const pointsDB = getPointsDB();
   if (pointsDB[user.name] !== undefined) {
       user.points = pointsDB[user.name];
@@ -95,7 +129,6 @@ export const redeemLog = (logId: string): DrawLog[] => {
 export const performDraw = (user: User): { result: Prize, updatedUser: User } | null => {
   if (user.points < COST_PER_DRAW) return null;
 
-  // 1. Determine Prize
   const rand = Math.random() * 100;
   let cumulative = 0;
   let selectedPrize: Prize | undefined;
@@ -108,18 +141,15 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
     }
   }
 
-  if (!selectedPrize) selectedPrize = PRIZE_POOL[0]; // Fallback
+  if (!selectedPrize) selectedPrize = PRIZE_POOL[0];
 
-  // 2. Update User State
   const updatedUser = { ...user };
   updatedUser.points -= COST_PER_DRAW;
 
-  // Handle immediate rewards
   if (selectedPrize.type === PrizeType.POINT) {
     updatedUser.points += selectedPrize.value;
   }
   
-  // Handle inventory & fragments
   if (selectedPrize.type !== PrizeType.EMPTY && selectedPrize.type !== PrizeType.POINT) {
      const newItem: InventoryItem = {
          prizeId: selectedPrize.id,
@@ -134,15 +164,12 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
      }
   }
 
-  // 3. Save User
   localStorage.setItem(KEYS.USER, JSON.stringify(updatedUser));
   
-  // 4. Update Central Points DB
   const db = getPointsDB();
   db[updatedUser.name] = updatedUser.points;
   savePointsDB(db);
 
-  // 5. Create Log
   const newLog: DrawLog = {
     id: Date.now().toString(),
     userName: user.name,
@@ -152,7 +179,7 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
   };
   
   const currentLogs = getLogs();
-  currentLogs.unshift(newLog); // Add to top
+  currentLogs.unshift(newLog);
   localStorage.setItem(KEYS.LOGS, JSON.stringify(currentLogs));
 
   return { result: selectedPrize, updatedUser };
