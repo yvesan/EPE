@@ -3,8 +3,7 @@ import React, { useEffect, useState } from 'react';
 import { getLogs, resetSystem, getPointsDB, redeemLog, getCloudId, setCloudId, syncFromCloud, pushToCloud, createCloudBin } from '../services/storage';
 import { DrawLog, PrizeType } from '../types';
 import { PRIZE_POOL } from '../constants';
-// Add History to lucide-react imports to avoid conflict with global History interface
-import { Download, Trash2, CheckCircle, Clock, XCircle, Cloud, RefreshCw, Upload, Info, AlertTriangle, Zap, Database, History, Plus, ExternalLink } from 'lucide-react';
+import { CheckCircle, Cloud, RefreshCw, Upload, AlertTriangle, Zap, History, Plus, ExternalLink, Activity, Save, HelpCircle, Copy, Edit3 } from 'lucide-react';
 
 declare const XLSX: any;
 
@@ -13,7 +12,11 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [pointsDB, setPointsDB] = useState<Record<string, number>>({});
   const [activeTab, setActiveTab] = useState<'logs' | 'users' | 'probs' | 'system'>('logs');
   const [cloudId, setCloudIdState] = useState(getCloudId() || '');
-  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{loading: boolean, msg: string, type: 'idle'|'success'|'error'}>({
+      loading: false, msg: '', type: 'idle'
+  });
+  // 默认展开手动指南，方便用户查看
+  const [showManualGuide, setShowManualGuide] = useState(true);
 
   useEffect(() => {
     setLogs(getLogs());
@@ -21,53 +24,54 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   }, []);
 
   const handleCloudIdSave = () => {
-    const trimmedId = cloudId.trim();
-    setCloudId(trimmedId);
-    setCloudIdState(trimmedId);
-    alert('ID 已保存! // Cloud ID Saved!');
+    // 自动清理 ID 中的无关字符（比如用户如果不小心复制了整个 URL）
+    let cleanedId = cloudId.trim();
+    if (cleanedId.includes('/')) {
+        const parts = cleanedId.split('/');
+        cleanedId = parts[parts.length - 1];
+    }
+    setCloudId(cleanedId);
+    setCloudIdState(cleanedId);
+    setSyncStatus({ loading: false, msg: 'ID 已保存! 请尝试 PUSH 或 PULL', type: 'success' });
   };
 
   const handleGenerateId = async () => {
-      setSyncLoading(true);
+      setSyncStatus({ loading: true, msg: '正在尝试连接 JSONBlob...', type: 'idle' });
       const newId = await createCloudBin();
-      setSyncLoading(false);
       
       if (newId) {
           setCloudIdState(newId);
           setCloudId(newId);
-          // 立即推送一次当前数据，初始化该 ID
-          await pushToCloud(); 
-          alert(`成功生成新 ID: ${newId}\n请复制此 ID 到其他设备以同步数据。`);
+          const pushRes = await pushToCloud(); 
+          if (pushRes.success) {
+             setSyncStatus({ loading: false, msg: `成功! ID: ${newId} (已初始化)`, type: 'success' });
+             setShowManualGuide(false); // 成功了就折叠指南
+          } else {
+             setSyncStatus({ loading: false, msg: `ID生成成功但上传失败: ${pushRes.message}`, type: 'error' });
+          }
       } else {
-          alert('生成失败 (Network Error)。\n\n请尝试手动方法：\n1. 点击下方 "手动获取 ID" 链接\n2. 在 npoint.io 点击 "+ New"\n3. 点击 Save\n4. 复制浏览器地址栏末尾的 ID (例如: .../d236f...)\n5. 粘贴到上方输入框');
+          setSyncStatus({ loading: false, msg: '网络拦截 (CORS Error)。请使用下方的【手动方法】，100%成功！', type: 'error' });
+          setShowManualGuide(true); // 失败了务必展开指南
       }
   };
 
   const handleSyncPull = async () => {
-      if (!cloudId) { alert("请先输入或生成 Cloud ID"); return; }
-      setSyncLoading(true);
-      const success = await syncFromCloud();
-      setSyncLoading(false);
-      if (success) {
+      if (!cloudId) { alert("请先输入 Cloud ID"); return; }
+      setSyncStatus({ loading: true, msg: '正在下载...', type: 'idle' });
+      const res = await syncFromCloud();
+      setSyncStatus({ loading: false, msg: res.message, type: res.success ? 'success' : 'error' });
+      
+      if (res.success) {
           setLogs(getLogs());
           setPointsDB(getPointsDB());
-          alert('拉取成功! // 云端数据已覆盖本地！');
-      } else {
-          alert('拉取失败! \n请检查 ID 是否正确。\n如果是第一次使用该 ID，请先执行“PUSH DATA”初始化。');
       }
   };
 
   const handleSyncPush = async () => {
-      if (!cloudId) { alert("请先输入或生成 Cloud ID"); return; }
-      setSyncLoading(true);
-      const success = await pushToCloud();
-      setSyncLoading(false);
-      
-      if (success) {
-        alert('推送成功! // 本地数据已覆盖云端！');
-      } else {
-        alert('推送失败! \nID 无效或云端服务拒绝连接。');
-      }
+      if (!cloudId) { alert("请先输入 Cloud ID"); return; }
+      setSyncStatus({ loading: true, msg: '正在上传...', type: 'idle' });
+      const res = await pushToCloud();
+      setSyncStatus({ loading: false, msg: res.message, type: res.success ? 'success' : 'error' });
   };
 
   const handleRedeem = async (logId: string) => {
@@ -91,10 +95,9 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   return (
     <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
       <div className="bg-anime-dark w-full max-w-6xl h-[90vh] border-2 border-anime-blue shadow-neon-blue flex flex-col overflow-hidden relative">
-        {/* Decorative Background for Admin */}
         <div className="absolute inset-0 bg-comic-dots opacity-5 pointer-events-none" />
 
-        {/* Header - Comic Style */}
+        {/* Header */}
         <div className="p-6 border-b border-anime-blue flex justify-between items-center bg-gray-900/50 relative z-10">
           <div className="flex items-center gap-4">
             <div className="bg-anime-blue text-black p-2 -rotate-3">
@@ -102,29 +105,24 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             </div>
             <h2 className="text-3xl font-tech italic text-white tracking-wider uppercase">EPE CORE SYSTEM</h2>
           </div>
-          <button 
-            onClick={onClose} 
-            className="bg-red-600 text-white px-6 py-2 font-tech text-xl border border-red-400 hover:bg-red-500 transition-all active:scale-95"
-          >
-            EXIT [X]
-          </button>
+          <button onClick={onClose} className="bg-red-600 text-white px-6 py-2 font-tech text-xl hover:bg-red-500">EXIT [X]</button>
         </div>
 
-        {/* Navigation Tabs - Skewed Blocks */}
+        {/* Tabs */}
         <div className="flex bg-black p-2 gap-2 relative z-10">
             {['logs', 'users', 'probs', 'system'].map((tab) => (
                 <button 
                     key={tab} 
                     onClick={() => setActiveTab(tab as any)} 
-                    className={`flex-1 py-3 px-4 font-tech text-lg tracking-widest uppercase transition-all skew-x-6 border-b-2
-                        ${activeTab === tab ? 'bg-anime-blue/20 text-anime-blue border-anime-blue shadow-[0_0_10px_rgba(56,182,255,0.3)]' : 'bg-transparent text-gray-500 border-transparent hover:text-white'}`}
+                    className={`flex-1 py-3 px-4 font-tech text-lg tracking-widest uppercase transition-all border-b-2
+                        ${activeTab === tab ? 'bg-anime-blue/20 text-anime-blue border-anime-blue' : 'text-gray-500 border-transparent'}`}
                 >
-                    <span className="-skew-x-6 block">{tab === 'logs' ? '抽奖记录' : tab === 'users' ? '用户积分' : tab === 'probs' ? '奖池配置' : '云同步'}</span>
+                    {tab === 'logs' ? '抽奖记录' : tab === 'users' ? '用户积分' : tab === 'probs' ? '奖池配置' : '云同步设置'}
                 </button>
             ))}
         </div>
 
-        {/* Content Area */}
+        {/* Content */}
         <div className="flex-1 overflow-auto p-6 relative z-10">
             {activeTab === 'logs' && (
                 <div className="space-y-6">
@@ -134,7 +132,7 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                            <span className="font-mono uppercase">Total Logs: <span className="text-anime-orange text-2xl">{logs.length}</span></span>
                         </div>
                         <button onClick={handleSyncPull} className="bg-anime-blue text-black px-4 py-1 font-bold text-xs uppercase flex items-center gap-2 hover:bg-white">
-                           <RefreshCw size={14} className={syncLoading ? 'animate-spin' : ''} /> 刷新数据
+                           <RefreshCw size={14} className={syncStatus.loading ? 'animate-spin' : ''} /> 刷新数据
                         </button>
                     </div>
                     
@@ -169,7 +167,7 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                 ) : (log.prizeType === PrizeType.EMPTY || log.prizeType === PrizeType.POINT) ? (
                                                     <span className="text-gray-600">--</span>
                                                 ) : (
-                                                    <button onClick={() => handleRedeem(log.id)} className="bg-anime-blue text-black text-xs font-bold px-6 py-2 hover:bg-white transition-all shadow-[0_0_10px_rgba(56,182,255,0.5)]">
+                                                    <button onClick={() => handleRedeem(log.id)} className="bg-anime-blue text-black text-xs font-bold px-6 py-2 hover:bg-white">
                                                         兑换核销
                                                     </button>
                                                 )}
@@ -186,10 +184,10 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             {activeTab === 'users' && (
                 <div className="space-y-6">
                     <div className="flex justify-between items-end">
-                        <div className="bg-anime-orange text-black p-2 skew-x-6 px-8">
-                            <h3 className="font-tech text-xl italic uppercase -skew-x-6">TRAINER RANKINGS</h3>
+                        <div className="bg-anime-orange text-black p-2 px-8">
+                            <h3 className="font-tech text-xl italic uppercase">TRAINER RANKINGS</h3>
                         </div>
-                        <button onClick={handleExportExcel} className="bg-gray-800 text-white px-6 py-2 font-mono text-sm border border-gray-600 hover:border-anime-blue hover:text-anime-blue transition-all">
+                        <button onClick={handleExportExcel} className="bg-gray-800 text-white px-6 py-2 font-mono text-sm border border-gray-600 hover:border-anime-blue">
                             EXPORT .XLSX
                         </button>
                     </div>
@@ -212,68 +210,129 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             )}
 
             {activeTab === 'system' && (
-                <div className="max-w-2xl mx-auto space-y-10 py-10">
-                    <div className="bg-gray-900 border border-anime-blue p-10 relative overflow-hidden">
-                         <div className="absolute inset-0 bg-comic-dots opacity-10" />
+                <div className="max-w-2xl mx-auto space-y-8 py-6">
+                    <div className="bg-gray-900 border border-anime-blue p-8 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-comic-dots opacity-10" />
                         <h3 className="text-white font-tech text-3xl mb-6 flex items-center gap-4 relative z-10">
-                            <Cloud className="text-anime-blue" size={40} /> SYNC CENTER
+                            <Cloud className="text-anime-blue" size={40} /> 云端同步 (SYNC)
                         </h3>
-                        <p className="text-gray-400 text-xs font-bold mb-8 leading-relaxed uppercase tracking-wider relative z-10">
-                            数据同步使用指南 (Tutorial):<br/>
-                            1. 点击 [生成新ID] 自动获取仓库。<br/>
-                            2. 如自动生成失败，请点击下方链接去 npoint.io 手动创建，并将 ID 填入框中。<br/>
-                            3. ID 只需要在一个设备生成，其他设备输入该 ID 即可共享数据。
-                        </p>
+                        
+                        {/* Status Bar */}
+                        <div className={`mb-6 p-4 border flex items-center gap-3 relative z-10 transition-colors duration-300
+                            ${syncStatus.type === 'error' ? 'bg-red-900/30 border-red-500 text-red-200' : 
+                              syncStatus.type === 'success' ? 'bg-green-900/30 border-green-500 text-green-200' : 
+                              'bg-gray-800 border-gray-600 text-gray-400'}`}>
+                            {syncStatus.loading ? <RefreshCw className="animate-spin" /> : <Activity />}
+                            <span className="font-bold">{syncStatus.msg || '系统就绪 / READY'}</span>
+                        </div>
 
                         <div className="space-y-6 relative z-10">
                             <div className="flex flex-col gap-2">
-                                <label className="text-xs font-bold text-anime-blue uppercase">Cloud Source ID</label>
+                                <label className="text-xs font-bold text-anime-blue uppercase">Cloud ID (粘贴到这里)</label>
                                 <div className="flex gap-4">
                                     <input 
                                         type="text" 
                                         value={cloudId} 
                                         onChange={(e) => setCloudIdState(e.target.value)}
                                         className="flex-1 bg-black border border-gray-600 p-4 font-mono text-lg text-white focus:outline-none focus:border-anime-blue"
-                                        placeholder="请生成或输入有效 ID..."
+                                        placeholder="例如: 1335xxxx-xxxx-xxxx..."
                                     />
-                                    <button onClick={handleCloudIdSave} className="bg-gray-800 text-white px-4 font-bold hover:bg-white hover:text-black border border-gray-600">保存</button>
+                                    <button onClick={handleCloudIdSave} className="bg-gray-800 text-white px-6 font-bold hover:bg-white hover:text-black border border-gray-600 flex items-center gap-2">
+                                        <Save size={18} /> 保存 ID
+                                    </button>
                                 </div>
-                                <button 
-                                    onClick={handleGenerateId} 
-                                    disabled={syncLoading}
-                                    className="w-full bg-gradient-to-r from-anime-orange to-red-500 text-white py-3 font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-neon-orange"
-                                >
-                                    <Plus size={18} /> 自动生成新的云端 ID (Auto Generate)
-                                </button>
-                                <a 
-                                    href="https://npoint.io" 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="flex items-center justify-center gap-2 text-xs text-gray-500 hover:text-anime-blue mt-2 border-b border-transparent hover:border-anime-blue w-fit mx-auto pb-0.5"
-                                >
-                                    <ExternalLink size={12} /> 生成失败？点此手动前往 npoint.io 获取 ID (Manual)
-                                </a>
+                                
+                                <div className="flex flex-col gap-3 mt-4">
+                                    {/* 自动按钮 */}
+                                    <button 
+                                        onClick={handleGenerateId} 
+                                        disabled={syncStatus.loading}
+                                        className="bg-gray-800 text-gray-400 border border-dashed border-gray-600 py-3 font-bold flex items-center justify-center gap-2 hover:text-white text-sm"
+                                    >
+                                        <Plus size={16} /> 尝试自动生成 ID (可能被拦截)
+                                    </button>
+                                    
+                                    <button 
+                                        onClick={() => setShowManualGuide(!showManualGuide)}
+                                        className="text-xs text-anime-orange hover:text-white flex items-center gap-2 justify-center py-2 underline"
+                                    >
+                                        <HelpCircle size={14} /> ID 如何获取？点击查看【手动获取教程】
+                                    </button>
+
+                                    {showManualGuide && (
+                                        <div className="bg-black/80 p-6 border-2 border-anime-blue/50 text-sm text-gray-300 space-y-4 rounded shadow-xl relative animate-in fade-in slide-in-from-top-2">
+                                            <h4 className="font-tech text-lg text-white text-center mb-2">手动获取 ID 教程 (100% 成功)</h4>
+                                            
+                                            <div className="space-y-4">
+                                                <div className="flex gap-3">
+                                                    <div className="bg-anime-blue text-black font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">1</div>
+                                                    <div>
+                                                        点击打开: <a href="https://jsonblob.com/new" target="_blank" className="text-anime-orange font-bold underline text-lg">jsonblob.com/new</a>
+                                                        <div className="text-xs text-gray-500 mt-1">会打开一个新的浏览器标签页</div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-3">
+                                                    <div className="bg-anime-blue text-black font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">2</div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <Edit3 size={14} className="text-anime-orange"/>
+                                                            <strong className="text-white">关键步骤：激活保存按钮</strong>
+                                                        </div>
+                                                        如果网页右上角/左上角的 <span className="bg-white text-black px-1 font-bold">Save</span> 按钮是<span className="text-gray-500 font-bold">灰色</span>的，请在页面中间的大输入框里输入一对大括号 <code className="bg-gray-700 text-green-400 px-1">{'{}'}</code>，或者随意敲个空格，按钮就会变亮！
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-3">
+                                                    <div className="bg-anime-blue text-black font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">3</div>
+                                                    <div>
+                                                        点击 <span className="bg-white text-black px-1 font-bold">Save</span> 后，查看浏览器地址栏：<br/>
+                                                        <code className="bg-gray-800 px-1 py-0.5 text-green-400 block mt-1">jsonblob.com/api/jsonBlob/1335xxxx-xxxx...</code>
+                                                        <div className="mt-2 font-bold text-white">复制 URL 最后那串长 ID！</div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex gap-3">
+                                                    <div className="bg-anime-blue text-black font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</div>
+                                                    <div>
+                                                        回到本页面，粘贴 ID 到上方输入框 -> 点击保存 -> 点击下方的 <span className="text-anime-blue font-bold">PUSH (上传)</span>。
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-6 pt-6">
-                                <button onClick={handleSyncPull} disabled={!cloudId || syncLoading} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 p-6 flex flex-col items-center gap-2 text-white">
-                                    <RefreshCw className={syncLoading ? 'animate-spin text-anime-blue' : ''} size={32} />
-                                    <span className="font-tech text-xl">PULL DATA (下载)</span>
+                            <div className="grid grid-cols-2 gap-6 pt-6 border-t border-gray-800">
+                                <button onClick={handleSyncPull} disabled={!cloudId || syncStatus.loading} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 p-6 flex flex-col items-center gap-2 text-white group relative overflow-hidden">
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent pointer-events-none" />
+                                    <RefreshCw className={`text-anime-blue group-hover:rotate-180 transition-transform ${syncStatus.loading ? 'animate-spin' : ''}`} size={32} />
+                                    <span className="font-tech text-xl relative z-10">PULL (下载)</span>
+                                    <span className="text-xs text-gray-500 relative z-10">其他设备: 填入ID后点此同步数据</span>
                                 </button>
-                                <button onClick={handleSyncPush} disabled={!cloudId || syncLoading} className="bg-anime-blue/20 hover:bg-anime-blue/40 border border-anime-blue p-6 flex flex-col items-center gap-2 text-anime-blue">
-                                    <Upload size={32} />
-                                    <span className="font-tech text-xl">PUSH DATA (上传)</span>
+                                <button onClick={handleSyncPush} disabled={!cloudId || syncStatus.loading} className="bg-anime-blue/10 hover:bg-anime-blue/30 border border-anime-blue p-6 flex flex-col items-center gap-2 text-anime-blue group relative overflow-hidden">
+                                    <div className="absolute inset-0 bg-anime-blue/5 pointer-events-none" />
+                                    <Upload className="group-hover:-translate-y-1 transition-transform relative z-10" size={32} />
+                                    <span className="font-tech text-xl relative z-10">PUSH (上传)</span>
+                                    <span className="text-xs text-anime-blue/70 relative z-10">管理员: 初始化或保存修改</span>
                                 </button>
                             </div>
+                            
+                            <p className="text-[10px] text-gray-500 text-center">
+                                * 如果点击 PULL 提示 404，说明 ID 粘贴错误或未先执行 PUSH。
+                            </p>
                         </div>
                     </div>
 
-                    <div className="bg-red-900/20 border border-red-900 p-8">
-                        <div className="flex items-center gap-4 mb-4">
-                           <AlertTriangle className="text-red-500" size={32} />
-                           <h4 className="text-red-500 font-tech text-2xl uppercase">DANGER ZONE</h4>
+                    <div className="bg-red-900/20 border border-red-900 p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                           <AlertTriangle className="text-red-500" size={24} />
+                           <span className="text-red-500 font-bold">重置所有数据 (RESET)</span>
                         </div>
-                        <button onClick={() => {if(confirm('确认清除所有数据？')) resetSystem()}} className="bg-red-600 text-white px-8 py-3 font-bold uppercase hover:bg-red-500 w-full">RESET SYSTEM</button>
+                        <button onClick={() => {if(confirm('确认清除所有数据？此操作不可逆！')) resetSystem()}} className="bg-red-600 text-white px-6 py-2 font-bold hover:bg-red-500">
+                            执行重置
+                        </button>
                     </div>
                 </div>
             )}

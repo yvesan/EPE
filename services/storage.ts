@@ -7,101 +7,151 @@ const KEYS = {
   LOGS: 'epe_logs',
   POINTS_DB: 'epe_points_db',
   CUSTOM_LOGO: 'epe_custom_logo',
-  CLOUD_ID: 'epe_cloud_sync_id' // 新增：用于存储云端 JSON 库 ID
+  CLOUD_ID: 'epe_cloud_sync_id'
 };
 
 // --- Cloud Sync Helpers ---
-// 使用 npoint.io 作为一个简单的免费 JSON 存储方案，无需后端即可实现同步
-const CLOUD_API_BASE = 'https://api.npoint.io/';
+// 切换到 JSONBlob，它支持匿名 PUT 更新，且我们添加了防缓存机制
+// JSONBlob 的 API 格式为 https://jsonblob.com/api/jsonBlob/<ID>
+const CLOUD_API_BASE = 'https://jsonblob.com/api/jsonBlob';
 
 export const setCloudId = (id: string) => localStorage.setItem(KEYS.CLOUD_ID, id);
 export const getCloudId = () => localStorage.getItem(KEYS.CLOUD_ID);
 
-// 新增：申请一个新的云端 ID
+// 辅助函数：带超时的 fetch，防止网络卡死
+const fetchWithTimeout = async (resource: string, options: RequestInit = {}) => {
+  const { timeout = 8000 } = options as any;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  try {
+      const response = await fetch(resource, {
+        ...options,
+        signal: controller.signal  
+      });
+      clearTimeout(id);
+      return response;
+  } catch (error) {
+      clearTimeout(id);
+      throw error;
+  }
+};
+
+// 新增：申请一个新的云端 ID (使用 JSONBlob)
 export const createCloudBin = async (): Promise<string | null> => {
     try {
         const initialData = {
             pointsDB: {},
             logs: [],
-            customLogo: null,
             updatedAt: Date.now(),
-            readme: "Created by EPE Card Pack App"
+            readme: "EPE App Sync Data - Do not delete"
         };
         
-        // 修复：添加 Content-Type 头，否则 npoint 可能返回 HTML 错误页
-        const response = await fetch(CLOUD_API_BASE, {
+        console.log("Attempting to create bin...");
+        const response = await fetchWithTimeout(CLOUD_API_BASE, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
             body: JSON.stringify(initialData)
         });
         
         if (!response.ok) {
-            console.error("Failed to create bin, status:", response.status);
+            console.error("Create failed:", response.status, response.statusText);
             return null;
         }
 
-        const data = await response.json();
-        // npoint returns { "id": "..." }
-        if (data && data.id) {
-            return data.id;
+        // JSONBlob 在 Location 头中返回新资源的 URL
+        // 某些浏览器/网络环境下可能暴露 Location 头受限，但通常 JSONBlob 支持
+        const location = response.headers.get('Location');
+        if (location) {
+            const parts = location.split('/');
+            const newId = parts[parts.length - 1];
+            console.log("Bin created successfully:", newId);
+            return newId;
         }
         return null;
     } catch (e) {
-        console.error("Failed to create cloud bin", e);
+        console.error("Network error creating bin:", e);
         return null;
     }
 };
 
-export const syncFromCloud = async (): Promise<boolean> => {
+export const syncFromCloud = async (): Promise<{success: boolean, message: string}> => {
     const cloudId = getCloudId();
-    if (!cloudId) return false;
+    if (!cloudId) return { success: false, message: "请先设置 Cloud ID" };
+
     try {
-        const response = await fetch(`${CLOUD_API_BASE}${cloudId}`);
-        // 修复：必须检查 response.ok，否则 404 页面会导致 json 解析失败
+        // CRITICAL FIX: 添加 timestamp 防止浏览器缓存 GET 请求
+        // 这是解决“无法同步”的关键，确保每次都拿最新数据
+        const url = `${CLOUD_API_BASE}/${cloudId}?t=${Date.now()}`;
+        
+        console.log(`Pulling from: ${url}`);
+        const response = await fetchWithTimeout(url, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0'
+            }
+        });
+
         if (!response.ok) {
-            console.warn("Cloud ID not found or network error");
-            return false;
+            if (response.status === 404) return { success: false, message: "ID 不存在 (404) - 请检查ID是否复制正确" };
+            return { success: false, message: `服务器错误 (${response.status})` };
         }
 
         const cloudData = await response.json();
         
-        // 简单的验证，确保数据格式正确
-        if (typeof cloudData !== 'object') return false;
+        if (typeof cloudData !== 'object') {
+            return { success: false, message: "数据格式错误" };
+        }
 
+        // 覆盖本地数据
         if (cloudData.pointsDB) localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(cloudData.pointsDB));
         if (cloudData.logs) localStorage.setItem(KEYS.LOGS, JSON.stringify(cloudData.logs));
-        if (cloudData.customLogo) localStorage.setItem(KEYS.CUSTOM_LOGO, cloudData.customLogo);
         
-        return true;
+        return { success: true, message: "同步成功 (已更新本地)" };
     } catch (e) {
-        console.error("Cloud pull failed", e);
-        return false;
+        console.error("Pull failed:", e);
+        return { success: false, message: "网络连接失败 (请检查网络)" };
     }
 };
 
-export const pushToCloud = async (): Promise<boolean> => {
+export const pushToCloud = async (): Promise<{success: boolean, message: string}> => {
     const cloudId = getCloudId();
-    if (!cloudId) return false;
+    if (!cloudId) return { success: false, message: "请先设置 Cloud ID" };
+
     try {
         const data = {
             pointsDB: getPointsDB(),
             logs: getLogs(),
-            customLogo: localStorage.getItem(KEYS.CUSTOM_LOGO),
-            updatedAt: Date.now()
+            updatedAt: Date.now(),
+            clientVersion: "3.1"
         };
-        const response = await fetch(`${CLOUD_API_BASE}${cloudId}`, {
-            method: 'POST', // npoint uses POST to update specific bin
+
+        const url = `${CLOUD_API_BASE}/${cloudId}`;
+        console.log(`Pushing to: ${url}`);
+
+        // JSONBlob 使用 PUT 更新
+        const response = await fetchWithTimeout(url, {
+            method: 'PUT', 
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
             },
             body: JSON.stringify(data)
         });
-        return response.ok;
+
+        if (!response.ok) {
+             return { success: false, message: `上传被拒绝 (${response.status})` };
+        }
+
+        return { success: true, message: "上传成功 (云端已更新)" };
     } catch (e) {
-        console.error("Cloud push failed", e);
-        return false;
+        console.error("Push failed:", e);
+        return { success: false, message: "网络连接失败" };
     }
 };
 
@@ -183,7 +233,7 @@ export const redeemLog = async (logId: string): Promise<DrawLog[]> => {
 export const performDraw = async (user: User): Promise<{ result: Prize, updatedUser: User } | null> => {
   if (user.points < COST_PER_DRAW) return null;
 
-  // 抽奖前先尝试静默拉取一次最新积分，防止积分被管理员更新后不一致
+  // 抽奖前强制同步一次，确保积分最新
   await syncFromCloud();
   const freshDB = getPointsDB();
   const freshPoints = freshDB[user.name] ?? user.points;
@@ -241,7 +291,7 @@ export const performDraw = async (user: User): Promise<{ result: Prize, updatedU
   currentLogs.unshift(newLog);
   localStorage.setItem(KEYS.LOGS, JSON.stringify(currentLogs));
 
-  // 核心：抽奖完立即推送云端，确保所有人可见
+  // 抽奖完立即推送
   await pushToCloud();
 
   return { result: selectedPrize, updatedUser };
