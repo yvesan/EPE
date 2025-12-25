@@ -295,7 +295,7 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                                 <div className="flex gap-3">
                                                     <div className="bg-anime-blue text-black font-bold w-6 h-6 rounded-full flex items-center justify-center shrink-0">4</div>
                                                     <div>
-                                                        回到本页面，粘贴 ID 到上方输入框 -> 点击保存 -> 点击下方的 <span className="text-anime-blue font-bold">PUSH (上传)</span>。
+                                                        回到本页面，粘贴 ID 到上方输入框 → 点击保存 → 点击下方的 <span className="text-anime-blue font-bold">PUSH (上传)</span>。
                                                     </div>
                                                 </div>
                                             </div>
