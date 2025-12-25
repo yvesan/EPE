@@ -5,8 +5,55 @@ import { COST_PER_DRAW, PRIZE_POOL } from '../constants';
 const KEYS = {
   USER: 'epe_user',
   LOGS: 'epe_logs',
-  POINTS_DB: 'epe_points_db', // { "Name": Points }
-  CUSTOM_LOGO: 'epe_custom_logo'
+  POINTS_DB: 'epe_points_db',
+  CUSTOM_LOGO: 'epe_custom_logo',
+  CLOUD_ID: 'epe_cloud_sync_id' // 新增：用于存储云端 JSON 库 ID
+};
+
+// --- Cloud Sync Helpers ---
+// 使用 npoint.io 作为一个简单的免费 JSON 存储方案，无需后端即可实现同步
+const CLOUD_API_BASE = 'https://api.npoint.io/';
+
+export const setCloudId = (id: string) => localStorage.setItem(KEYS.CLOUD_ID, id);
+export const getCloudId = () => localStorage.getItem(KEYS.CLOUD_ID);
+
+export const syncFromCloud = async (): Promise<boolean> => {
+    const cloudId = getCloudId();
+    if (!cloudId) return false;
+    try {
+        const response = await fetch(`${CLOUD_API_BASE}${cloudId}`);
+        const cloudData = await response.json();
+        
+        if (cloudData.pointsDB) localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(cloudData.pointsDB));
+        if (cloudData.logs) localStorage.setItem(KEYS.LOGS, JSON.stringify(cloudData.logs));
+        if (cloudData.customLogo) localStorage.setItem(KEYS.CUSTOM_LOGO, cloudData.customLogo);
+        
+        return true;
+    } catch (e) {
+        console.error("Cloud pull failed", e);
+        return false;
+    }
+};
+
+export const pushToCloud = async (): Promise<boolean> => {
+    const cloudId = getCloudId();
+    if (!cloudId) return false;
+    try {
+        const data = {
+            pointsDB: getPointsDB(),
+            logs: getLogs(),
+            customLogo: localStorage.getItem(KEYS.CUSTOM_LOGO),
+            updatedAt: Date.now()
+        };
+        const response = await fetch(`${CLOUD_API_BASE}${cloudId}`, {
+            method: 'POST',
+            body: JSON.stringify(data)
+        });
+        return response.ok;
+    } catch (e) {
+        console.error("Cloud push failed", e);
+        return false;
+    }
 };
 
 // --- Points Database Management ---
@@ -20,58 +67,23 @@ const savePointsDB = (db: Record<string, number>) => {
     localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(db));
 };
 
-export const importPointsData = (data: {name: string, points: number}[]) => {
+export const importPointsData = async (data: {name: string, points: number}[]) => {
     const db = getPointsDB();
     data.forEach(item => {
-        // Normalize name: trim whitespace
         const cleanName = item.name.trim();
         if (cleanName) {
-            // 策略：覆盖更新积分，但不影响其他数据
             db[cleanName] = Number(item.points);
         }
     });
     savePointsDB(db);
     
-    // 同步当前登录用户（如果有）
+    // 导入后自动尝试同步到云端
+    await pushToCloud();
+    
     const currentUser = getUser();
     if (currentUser && db[currentUser.name] !== undefined) {
         currentUser.points = db[currentUser.name];
         localStorage.setItem(KEYS.USER, JSON.stringify(currentUser));
-    }
-};
-
-// --- Full System Sync (For Cross-Device Support) ---
-
-export const exportFullSystemData = () => {
-    const data = {
-        pointsDB: getPointsDB(),
-        logs: getLogs(),
-        customLogo: localStorage.getItem(KEYS.CUSTOM_LOGO),
-        version: '1.0',
-        exportTime: Date.now()
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `EPE_系统数据全备份_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-};
-
-export const importFullSystemData = (jsonString: string): boolean => {
-    try {
-        const data = JSON.parse(jsonString);
-        if (!data.pointsDB || !data.logs) throw new Error("无效的备份文件");
-        
-        localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(data.pointsDB));
-        localStorage.setItem(KEYS.LOGS, JSON.stringify(data.logs));
-        if (data.customLogo) localStorage.setItem(KEYS.CUSTOM_LOGO, data.customLogo);
-        
-        return true;
-    } catch (e) {
-        console.error("Restore failed", e);
-        return false;
     }
 };
 
@@ -103,31 +115,31 @@ export const getUser = (): User | null => {
   return user;
 };
 
-export const saveCustomLogo = (base64Data: string) => {
-    localStorage.setItem(KEYS.CUSTOM_LOGO, base64Data);
-}
-
-export const getCustomLogo = (): string | null => {
-    return localStorage.getItem(KEYS.CUSTOM_LOGO);
-}
-
 export const getLogs = (): DrawLog[] => {
   const data = localStorage.getItem(KEYS.LOGS);
   return data ? JSON.parse(data) : [];
 };
 
-export const redeemLog = (logId: string): DrawLog[] => {
+export const redeemLog = async (logId: string): Promise<DrawLog[]> => {
   const logs = getLogs();
   const index = logs.findIndex(l => l.id === logId);
   if (index !== -1) {
     logs[index].redeemedAt = Date.now();
     localStorage.setItem(KEYS.LOGS, JSON.stringify(logs));
+    await pushToCloud(); // 核销后也同步云端
   }
   return logs;
 };
 
-export const performDraw = (user: User): { result: Prize, updatedUser: User } | null => {
+export const performDraw = async (user: User): Promise<{ result: Prize, updatedUser: User } | null> => {
   if (user.points < COST_PER_DRAW) return null;
+
+  // 抽奖前先尝试静默拉取一次最新积分，防止积分被管理员更新后不一致
+  await syncFromCloud();
+  const freshDB = getPointsDB();
+  const freshPoints = freshDB[user.name] ?? user.points;
+  
+  if (freshPoints < COST_PER_DRAW) return null;
 
   const rand = Math.random() * 100;
   let cumulative = 0;
@@ -143,7 +155,7 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
 
   if (!selectedPrize) selectedPrize = PRIZE_POOL[0];
 
-  const updatedUser = { ...user };
+  const updatedUser = { ...user, points: freshPoints };
   updatedUser.points -= COST_PER_DRAW;
 
   if (selectedPrize.type === PrizeType.POINT) {
@@ -158,18 +170,16 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
          isRedeemed: false
      };
      updatedUser.inventory.push(newItem);
-
-     if (selectedPrize.type === PrizeType.FRAGMENT && selectedPrize.fragmentId) {
-         updatedUser.fragments[selectedPrize.fragmentId] = (updatedUser.fragments[selectedPrize.fragmentId] || 0) + 1;
-     }
   }
 
   localStorage.setItem(KEYS.USER, JSON.stringify(updatedUser));
   
+  // 更新数据库
   const db = getPointsDB();
   db[updatedUser.name] = updatedUser.points;
   savePointsDB(db);
 
+  // 记录日志
   const newLog: DrawLog = {
     id: Date.now().toString(),
     userName: user.name,
@@ -181,6 +191,9 @@ export const performDraw = (user: User): { result: Prize, updatedUser: User } | 
   const currentLogs = getLogs();
   currentLogs.unshift(newLog);
   localStorage.setItem(KEYS.LOGS, JSON.stringify(currentLogs));
+
+  // 核心：抽奖完立即推送云端，确保所有人可见
+  await pushToCloud();
 
   return { result: selectedPrize, updatedUser };
 };

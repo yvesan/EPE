@@ -1,654 +1,440 @@
-import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { User, Prize, PrizeType, DrawLog } from './types';
-import { initializeUser, getUser, performDraw, importPointsData, getLogs } from './services/storage';
-import { CardPack } from './components/CardPack';
-import { COST_PER_DRAW, FRAGMENTS_NEEDED, FRAGMENT_DEFINITIONS } from './constants';
-import { AdminPanel } from './components/AdminPanel';
-import { User as UserIcon, Settings, Trophy, Wallet, RefreshCw, LogOut, Zap, Gift, Plus, Lock, X, Clock, ArrowUpDown, FileSpreadsheet, Upload } from 'lucide-react';
 
-// Declaration for xlsx library loaded via CDN
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { User, Prize, PrizeType } from './types';
+import { initializeUser, getUser, performDraw, importPointsData, syncFromCloud, getCloudId, getPointsDB } from './services/storage';
+import { playClick, playConfirm, playOpen, playWin } from './services/audio';
+import { COST_PER_DRAW } from './constants';
+import { AdminPanel } from './components/AdminPanel';
+import { CardPack } from './components/CardPack';
+import { LogOut, Settings, Trophy, Wallet, User as UserIcon, History, Gift, Zap, Cloud, Database, RefreshCw, ChevronRight, Star, XCircle, Upload, FileSpreadsheet, Download, Sparkles } from 'lucide-react';
+
+// Declare XLSX globally since it is loaded via script tag in index.html
 declare const XLSX: any;
 
-// --- Shared Components ---
+// --- Styled Components (Anime Style) ---
 
-const ComicButton = ({ onClick, disabled, children, color = 'neon', className = '' }: any) => {
-    const baseClass = "relative px-8 py-3 font-comic text-2xl tracking-wider transform transition-transform active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed select-none";
-    const colors: any = {
-        neon: "bg-epe-neon text-black border-2 border-black shadow-comic hover:shadow-comic-hover hover:translate-x-[2px] hover:translate-y-[2px]",
-        gold: "bg-epe-gold text-black border-2 border-black shadow-comic hover:shadow-comic-hover hover:translate-x-[2px] hover:translate-y-[2px]",
-        dark: "bg-gray-800 text-white border-2 border-gray-600 hover:bg-gray-700",
-        red: "bg-epe-pink text-white border-2 border-black shadow-comic hover:shadow-comic-hover"
-    };
-
-    return (
-        <button onClick={onClick} disabled={disabled} className={`${baseClass} ${colors[color]} -skew-x-12 ${className}`}>
-            <span className="block skew-x-12">{children}</span>
-        </button>
-    );
-};
-
-const SpeedLines = () => (
+const BackgroundEffects = () => (
     <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        <div className="absolute top-[50%] left-[50%] w-[200vmax] h-[200vmax] bg-comic-burst opacity-10 animate-spin-slow origin-center"></div>
+        {/* Dark base */}
+        <div className="absolute inset-0 bg-anime-dark" />
+        {/* Blue Dots Pattern */}
+        <div className="absolute inset-0 bg-comic-dots bg-[size:20px_20px] opacity-10" />
+        {/* Speed Lines Overlay */}
+        <div className="absolute inset-0 bg-comic-speed opacity-20" />
+        {/* Central Glow */}
+        <div className="absolute top-1/2 left-1/2 w-[150%] h-[150%] -translate-x-1/2 -translate-y-1/2 bg-[radial-gradient(circle,_rgba(56,182,255,0.15),_transparent_70%)]" />
     </div>
 );
 
-// --- Modals ---
+// --- Views ---
 
-interface RechargeModalProps {
-    onClose: () => void;
-    onSuccess: () => void;
-}
+const WelcomeView = ({ inputName, setInputName, handleLogin, setShowLeaderboard }: any) => (
+  <motion.div 
+    initial={{ opacity: 0, scale: 0.9 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, y: -50 }}
+    className="relative z-20 w-full max-w-md px-4"
+  >
+    {/* Decorative Elements */}
+    <div className="absolute -top-10 -right-10 text-anime-orange opacity-20 animate-pulse hidden md:block">
+        <Zap size={100} fill="currentColor" />
+    </div>
 
-const RechargeModal: React.FC<RechargeModalProps> = ({ onClose, onSuccess }) => {
-    const [step, setStep] = useState<'password' | 'upload'>('password');
-    const [password, setPassword] = useState('');
-    const [error, setError] = useState('');
-    const [uploadStatus, setUploadStatus] = useState('');
+    {/* Main Container - Skewed Tech Style */}
+    <div className="bg-anime-card/90 backdrop-blur-md border-l-4 border-r-4 border-anime-blue p-8 relative overflow-hidden transform md:-skew-x-3 shadow-neon-blue">
+        {/* Top Label */}
+        <div className="absolute top-0 left-0 bg-anime-blue text-anime-dark text-xs font-black px-4 py-1 skew-x-3">
+            VER 3.1 SYSTEM ONLINE
+        </div>
 
-    const handlePasswordSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (password === 'EPE2025') {
-            setStep('upload');
-            setError('');
-        } else {
-            setError('密码错误！权限拒绝');
-        }
+        <div className="mb-10 text-center relative z-10 md:skew-x-3">
+            <h1 className="font-comic text-7xl text-transparent bg-clip-text bg-gradient-to-b from-white to-anime-blue drop-shadow-[2px_2px_0_#000] mb-2">
+                EPE
+            </h1>
+            <h2 className="text-2xl font-tech text-white uppercase tracking-wider italic flex justify-center items-center gap-2">
+                <span className="text-anime-orange">箐英</span>体能综合馆
+            </h2>
+            <div className="mt-4 flex justify-center gap-1">
+                <div className="w-16 h-2 bg-anime-blue skew-x-12" />
+                <div className="w-4 h-2 bg-anime-orange skew-x-12" />
+                <div className="w-2 h-2 bg-white skew-x-12" />
+            </div>
+        </div>
+
+        <form onSubmit={(e) => { playConfirm(); handleLogin(e); }} className="space-y-6 md:skew-x-3">
+            <div className="space-y-2">
+                <label className="text-xs font-bold text-anime-blue uppercase tracking-widest flex items-center gap-2">
+                    <UserIcon size={14} /> 训练师代号 / ID
+                </label>
+                <div className="relative group">
+                    <input 
+                        type="text" 
+                        value={inputName} 
+                        onChange={(e) => setInputName(e.target.value)}
+                        className="w-full bg-anime-dark border-2 border-anime-blue/50 p-4 font-bold text-xl text-white focus:outline-none focus:border-anime-orange focus:shadow-neon-orange transition-all placeholder:text-gray-600 skew-x-0"
+                        placeholder="ENTER YOUR NAME"
+                        required
+                    />
+                </div>
+            </div>
+            
+            <button 
+                type="submit"
+                onClick={() => playClick()}
+                className="w-full group relative h-16 overflow-hidden transform transition-all active:scale-95"
+            >
+                <div className="absolute inset-0 bg-gradient-to-r from-anime-orange to-red-600 -skew-x-12 group-hover:skew-x-12 transition-transform duration-300" />
+                <div className="relative z-10 w-full h-full flex items-center justify-center gap-3">
+                    <span className="font-tech text-2xl text-white italic tracking-widest uppercase">启动链接 / START</span>
+                    <ChevronRight className="text-white animate-pulse" />
+                </div>
+            </button>
+        </form>
+
+        <div className="mt-8 pt-6 flex justify-center md:skew-x-3">
+            <button 
+                onClick={() => { playClick(); setShowLeaderboard(true); }}
+                className="flex items-center gap-2 text-xs font-bold text-gray-400 hover:text-anime-blue transition-colors uppercase tracking-widest group border-b border-dashed border-gray-600 pb-1 hover:border-anime-blue"
+            >
+                <Trophy size={14} className="group-hover:text-anime-yellow transition-colors" />
+                查看全服战力榜 / LEADERBOARD
+            </button>
+        </div>
+    </div>
+  </motion.div>
+);
+
+const ShopView = ({ user, activeTab, setActiveTab, handleDraw, handleLogout, setShowAdmin, setShowRecharge, isOpening }: any) => (
+  <div className="w-full max-w-6xl flex flex-col h-full relative z-10">
+    {/* HUD Header */}
+    <header className="w-full bg-anime-card/90 border-b-2 border-anime-blue/30 p-4 flex justify-between items-center sticky top-0 z-50 backdrop-blur-md">
+        <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-anime-blue -skew-x-6 flex items-center justify-center overflow-hidden border-2 border-white shadow-neon-blue">
+                <UserIcon className="text-anime-dark skew-x-6" size={28} />
+            </div>
+            <div className="flex flex-col">
+                <h2 className="font-tech text-xl text-white leading-none uppercase italic tracking-wider">{user?.name}</h2>
+                <div className="flex items-center gap-2 mt-1">
+                    <div className="h-2 w-24 bg-gray-700 rounded-sm overflow-hidden skew-x-12">
+                        <div className="h-full bg-gradient-to-r from-anime-blue to-anime-orange w-[100%] animate-pulse" />
+                    </div>
+                    <span className="text-[10px] font-mono text-anime-blue">LV. MAX</span>
+                </div>
+            </div>
+        </div>
+
+        <div className="flex items-center gap-4 md:gap-6">
+            <div 
+                onClick={() => { playClick(); setShowRecharge(true); }}
+                className="flex items-center gap-3 bg-anime-dark px-6 py-2 border border-anime-orange/50 hover:border-anime-orange hover:shadow-neon-orange cursor-pointer transition-all active:scale-95 skew-x-6 group"
+            >
+                <div className="-skew-x-6 flex items-center gap-3">
+                    <Database size={16} className="text-anime-orange group-hover:rotate-180 transition-transform duration-500" />
+                    <span className="font-comic text-2xl tracking-widest text-white group-hover:text-anime-orange transition-colors">{user?.points}</span>
+                    <span className="text-xs font-bold text-gray-400">PTS</span>
+                </div>
+            </div>
+            <div className="flex gap-2">
+                <button onClick={() => { playClick(); setShowAdmin(true); }} className="p-2 text-gray-400 hover:text-anime-blue hover:bg-anime-blue/10 rounded-full transition-all">
+                    <Settings size={20} />
+                </button>
+                <button onClick={() => { playClick(); handleLogout(); }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-500/10 rounded-full transition-all">
+                    <LogOut size={20} />
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <div className="flex-1 flex flex-col p-4 md:p-6 overflow-y-auto">
+        {/* Navigation Tabs - Slanted Style */}
+        <div className="flex justify-center mb-10">
+            <div className="flex bg-anime-dark/50 p-1 rounded-sm gap-2">
+                <button 
+                    onClick={() => { playClick(); setActiveTab('pull'); }} 
+                    className={`px-8 py-2 font-tech text-lg uppercase tracking-wider transition-all skew-x-12 border-l-4
+                        ${activeTab === 'pull' ? 'bg-anime-orange text-white border-white shadow-neon-orange' : 'bg-transparent text-gray-500 hover:text-white border-transparent'}`}
+                >
+                    <span className="-skew-x-12 block">抽奖补给</span>
+                </button>
+                <button 
+                    onClick={() => { playClick(); setActiveTab('collection'); }} 
+                    className={`px-8 py-2 font-tech text-lg uppercase tracking-wider transition-all skew-x-12 border-r-4
+                        ${activeTab === 'collection' ? 'bg-anime-blue text-anime-dark border-white shadow-neon-blue' : 'bg-transparent text-gray-500 hover:text-white border-transparent'}`}
+                >
+                    <span className="-skew-x-12 block">我的仓库</span>
+                </button>
+            </div>
+        </div>
+
+        {/* Main Content Area */}
+        <AnimatePresence mode="wait">
+            {activeTab === 'pull' ? (
+                <motion.div 
+                    key="pull"
+                    initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 1.05 }}
+                    className="flex-1 flex flex-col items-center justify-center min-h-[400px]"
+                >
+                    <div className="relative mb-12 group">
+                        {/* Background Ring */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[350px] h-[350px] border-2 border-dashed border-anime-blue/20 rounded-full animate-spin-slow pointer-events-none" />
+                        
+                        <CardPack onClick={handleDraw} disabled={(user?.points || 0) < COST_PER_DRAW} isOpening={isOpening} />
+                        
+                        {/* Cost Badge */}
+                        <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 bg-anime-dark border-2 border-anime-orange px-8 py-3 shadow-neon-orange flex items-center gap-2 whitespace-nowrap z-20 skew-x-6">
+                            <span className="font-bold text-xs text-anime-orange -skew-x-6">消耗 / COST:</span>
+                            <span className="font-comic text-3xl text-white -skew-x-6">{COST_PER_DRAW}</span>
+                        </div>
+                    </div>
+
+                    <div className="text-center mt-4">
+                        <p className="text-anime-blue/50 text-xs font-mono uppercase tracking-[0.3em] mb-2">System Ready</p>
+                        <p className={`text-sm font-bold animate-pulse uppercase tracking-widest ${ (user?.points || 0) < COST_PER_DRAW ? "text-red-500" : "text-anime-blue" }`}>
+                            {(user?.points || 0) < COST_PER_DRAW ? ">> 能量不足 <<" : ">> 点击开启补给包 <<"}
+                        </p>
+                    </div>
+                </motion.div>
+            ) : (
+                <motion.div 
+                    key="collection"
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                    className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4"
+                >
+                    {user?.inventory.length === 0 ? (
+                        <div className="col-span-full flex flex-col items-center justify-center py-20 text-gray-600">
+                            <Gift size={64} className="mb-4 opacity-20" />
+                            <p className="font-tech text-2xl uppercase opacity-50">NO ITEMS FOUND</p>
+                            <p className="text-xs">暂无装备，快去抽奖吧</p>
+                        </div>
+                    ) : (
+                        user?.inventory.map((item: any, i: number) => (
+                            <motion.div 
+                                key={i}
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: i * 0.05 }}
+                                className="bg-anime-card border border-anime-blue/30 p-3 hover:border-anime-blue hover:shadow-neon-blue hover:-translate-y-1 transition-all group cursor-default relative overflow-hidden"
+                            >
+                                <div className="absolute top-0 right-0 p-1 bg-anime-blue/10 rounded-bl-lg">
+                                    <span className="text-[9px] font-mono text-anime-blue font-bold">#{String(i + 1).padStart(3, '0')}</span>
+                                </div>
+                                <div className="aspect-square bg-anime-dark/50 border border-gray-700 mb-3 flex items-center justify-center group-hover:border-anime-blue transition-colors">
+                                    <Gift size={28} className="text-gray-500 group-hover:text-white transition-colors" />
+                                </div>
+                                <div className="font-bold text-white text-sm leading-tight uppercase line-clamp-2 min-h-[2.5em] tracking-wide">
+                                    {item.prizeName}
+                                </div>
+                                <div className="mt-2 pt-2 border-t border-gray-700 flex justify-between items-center">
+                                    <span className="text-[8px] font-mono text-gray-500">{new Date(item.obtainedAt).toLocaleDateString()}</span>
+                                    <div className={`w-2 h-2 rounded-full ${item.isRedeemed ? 'bg-gray-600' : 'bg-anime-orange animate-pulse'}`} />
+                                </div>
+                            </motion.div>
+                        ))
+                    )}
+                </motion.div>
+            )}
+        </AnimatePresence>
+    </div>
+  </div>
+);
+
+const ResultView = ({ currentPrize, closeResult }: any) => (
+  <motion.div 
+    initial={{ opacity: 0 }}
+    animate={{ opacity: 1 }}
+    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+  >
+    <motion.div 
+        initial={{ scale: 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ type: "spring", bounce: 0.5 }}
+        className="w-full max-w-sm relative"
+    >
+        {/* Burst Effect */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[200%] h-[200%] bg-gradient-conic from-anime-blue via-transparent to-anime-orange animate-spin-slow opacity-30 -z-10" />
+
+        <div className="bg-anime-dark border-4 border-anime-orange p-1 shadow-neon-orange transform -rotate-1">
+            <div className="border border-white/20 p-6 flex flex-col items-center text-center bg-grid-pattern">
+                
+                <div className="w-full flex justify-between items-center mb-8 border-b border-gray-700 pb-2">
+                    <span className="font-mono text-xs font-bold uppercase tracking-widest text-anime-blue animate-pulse">SYSTEM MSG</span>
+                    <span className="font-black text-xs uppercase bg-anime-orange text-black px-2 py-0.5 skew-x-12">
+                        {currentPrize?.type === PrizeType.EMPTY ? 'MISS' : 'GET!'}
+                    </span>
+                </div>
+
+                <div className={`mb-8 relative ${currentPrize?.isRare ? 'animate-bounce' : ''}`}>
+                     {/* Glow behind icon */}
+                    <div className="absolute inset-0 bg-white blur-3xl opacity-20" />
+                    <div className="relative z-10 text-white">
+                        {currentPrize?.type === PrizeType.POINT && <Database size={100} className="text-anime-blue drop-shadow-[0_0_15px_rgba(56,182,255,0.8)]" />}
+                        {currentPrize?.type === PrizeType.CASH && <Wallet size={100} className="text-anime-orange drop-shadow-[0_0_15px_rgba(255,145,0,0.8)]" />}
+                        {currentPrize?.type === PrizeType.PHYSICAL && <Gift size={100} className="text-anime-yellow drop-shadow-[0_0_15px_rgba(255,215,0,0.8)]" />}
+                        {currentPrize?.type === PrizeType.EMPTY && <XCircle size={100} className="text-gray-600" />}
+                        {currentPrize?.type === PrizeType.COUPON && <Star size={100} className="text-purple-400 drop-shadow-[0_0_15px_rgba(168,85,247,0.8)]" />}
+                        {currentPrize?.type === PrizeType.FRAGMENT && <Zap size={100} className="text-red-500 drop-shadow-[0_0_15px_rgba(239,68,68,0.8)]" />}
+                    </div>
+                </div>
+
+                <h3 className="text-3xl font-tech text-white uppercase leading-none mb-2 tracking-wide drop-shadow-md">
+                    {currentPrize?.name}
+                </h3>
+                
+                {currentPrize?.isRare && (
+                    <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-black px-4 py-1 uppercase tracking-widest border border-white mb-6 inline-block transform -skew-x-12 shadow-neon-blue">
+                        <span className="block skew-x-12">SUPER RARE</span>
+                    </div>
+                )}
+
+                <p className="text-gray-400 text-xs font-mono mb-8 max-w-[200px] uppercase">
+                    {currentPrize?.type === PrizeType.EMPTY ? 'Try Again Next Time' : 'Item added to inventory'}
+                </p>
+
+                <button 
+                    onClick={() => { playClick(); closeResult(); }}
+                    className="w-full bg-white text-black font-tech text-xl py-3 hover:bg-anime-blue hover:text-white transition-all uppercase tracking-widest skew-x-0 hover:-skew-x-3 duration-200"
+                >
+                    CONFIRM
+                </button>
+            </div>
+        </div>
+    </motion.div>
+  </motion.div>
+);
+
+const RechargeModal = ({ onClose, onSuccess }: any) => {
+    const [jsonInput, setJsonInput] = useState('');
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const downloadTemplate = () => {
+        const ws = XLSX.utils.json_to_sheet([
+            { "name": "张三", "points": 100 },
+            { "name": "李四", "points": 500 }
+        ]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Points_Template");
+        XLSX.writeFile(wb, "EPE_积分导入模版.xlsx");
     };
 
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
-        setUploadStatus('Processing...');
         const reader = new FileReader();
-        
         reader.onload = (evt) => {
             try {
                 const bstr = evt.target?.result;
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
-                // Read as array of arrays
-                const data: any[][] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-                
-                // Parse: Assume Row 1 is header (optional), look for Name/Points columns or just use indices 0 and 1
-                const parsedData: {name: string, points: number}[] = [];
-                
-                // Skip header if it looks like a header (non-numeric points)
-                let startIndex = 0;
-                if (data.length > 0 && isNaN(Number(data[0][1]))) {
-                    startIndex = 1;
-                }
-
-                for (let i = startIndex; i < data.length; i++) {
-                    const row = data[i];
-                    if (row.length >= 2 && row[0]) {
-                        parsedData.push({
-                            name: String(row[0]),
-                            points: Number(row[1]) || 0
-                        });
-                    }
-                }
-
-                importPointsData(parsedData);
-                setUploadStatus(`成功导入 ${parsedData.length} 条数据！`);
-                setTimeout(() => {
-                    onSuccess();
-                    onClose();
-                }, 1500);
-
+                const data = XLSX.utils.sheet_to_json(ws, { header: ["name", "points"], range: 1 });
+                const validData = data.filter((row: any) => row.name && row.points !== undefined);
+                setJsonInput(JSON.stringify(validData, null, 2));
             } catch (err) {
-                console.error(err);
-                setUploadStatus('文件解析失败，请确保格式正确(Excel)。');
+                alert("读取 Excel 失败");
             }
         };
         reader.readAsBinaryString(file);
     };
 
-    return (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-            <motion.div 
-                initial={{ scale: 0.8, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                className="bg-gray-800 border-4 border-epe-neon w-full max-w-md p-6 relative shadow-[0_0_30px_rgba(0,243,255,0.3)]"
-            >
-                <button onClick={onClose} className="absolute top-2 right-2 text-gray-400 hover:text-white"><X /></button>
-                <h2 className="text-2xl font-comic text-epe-neon mb-6 flex items-center gap-2">
-                    <Zap className="fill-current" /> SYSTEM UPDATE
-                </h2>
+    const handleImport = async () => {
+        try {
+            let data;
+            if (jsonInput.trim().startsWith('[')) {
+                data = JSON.parse(jsonInput);
+            } else {
+                data = jsonInput.trim().split('\n').map(line => {
+                    const parts = line.split(/[\t,]+|\s{2,}/);
+                    if (parts.length >= 2) return { name: parts[0].trim(), points: Number(parts[1].trim()) };
+                    return null;
+                }).filter(Boolean);
+            }
 
-                {step === 'password' ? (
-                    <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                        <p className="text-gray-300 font-tech text-sm">请输入管理员密码以导入积分数据：</p>
-                        <div className="relative">
-                            <Lock className="absolute left-3 top-3 text-gray-500" size={18} />
-                            <input 
-                                type="password" 
-                                autoFocus
-                                value={password}
-                                onChange={(e) => setPassword(e.target.value)}
-                                className="w-full bg-gray-900 border-2 border-gray-600 p-2 pl-10 text-white font-mono focus:border-epe-neon focus:outline-none"
-                                placeholder="输入密码..."
-                            />
-                        </div>
-                        {error && <p className="text-epe-pink text-xs font-bold">{error}</p>}
-                        <ComicButton color="neon" className="w-full">验证权限</ComicButton>
-                    </form>
-                ) : (
-                    <div className="space-y-4 text-center">
-                        <div className="bg-gray-900 border-2 border-dashed border-gray-500 rounded-lg p-8 hover:border-epe-neon transition-colors relative">
-                            <input 
-                                type="file" 
-                                accept=".xlsx, .xls"
-                                onChange={handleFileUpload}
-                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                            />
-                            <FileSpreadsheet className="mx-auto text-gray-400 mb-2" size={48} />
-                            <p className="text-white font-bold">点击上传 Excel 表格</p>
-                            <p className="text-xs text-gray-500 mt-2">支持 .xlsx / .xls 格式</p>
-                            <p className="text-xs text-gray-500">第一列：姓名 | 第二列：积分</p>
-                        </div>
-                        {uploadStatus && (
-                            <p className={`font-mono text-sm ${uploadStatus.includes('失败') ? 'text-red-500' : 'text-green-400'}`}>
-                                {uploadStatus}
-                            </p>
-                        )}
-                    </div>
-                )}
-            </motion.div>
-        </div>
-    );
-};
-
-const LeaderboardModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-    const [logs, setLogs] = useState<DrawLog[]>([]);
-    const [sortField, setSortField] = useState<'timestamp' | 'userName' | 'prizeName'>('timestamp');
-    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-
-    useEffect(() => {
-        setLogs(getLogs());
-    }, []);
-
-    const handleSort = (field: typeof sortField) => {
-        if (sortField === field) {
-            setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortDirection('desc'); // Default to desc for new field
-        }
+            if (Array.isArray(data) && data.length > 0) {
+                await importPointsData(data);
+                playConfirm();
+                alert(`成功导入 ${data.length} 条数据`);
+                onSuccess();
+                onClose();
+            } else { alert('未识别到有效数据'); }
+        } catch (e) { alert('格式错误'); }
     };
 
-    const sortedLogs = [...logs].sort((a, b) => {
-        let valA: any = a[fieldToKey(sortField)];
-        let valB: any = b[fieldToKey(sortField)];
-
-        // Handle string comparison
-        if (typeof valA === 'string') {
-            valA = valA.toLowerCase();
-            valB = valB.toLowerCase();
-            if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-            if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-            return 0;
-        }
-
-        // Handle number comparison
-        return sortDirection === 'asc' ? valA - valB : valB - valA;
-    });
-
-    // Helper to map UI sort fields to DrawLog keys
-    function fieldToKey(field: string): keyof DrawLog {
-        return field as keyof DrawLog;
-    }
-
-    const getPrizeStyle = (type: PrizeType) => {
-        switch(type) {
-            case PrizeType.CASH: return 'text-green-600 font-bold bg-green-50 px-2 py-1 border border-green-200';
-            case PrizeType.FRAGMENT: return 'text-amber-600 font-bold bg-amber-50 px-2 py-1 border border-amber-200';
-            case PrizeType.PHYSICAL: return 'text-purple-600 font-bold bg-purple-50 px-2 py-1 border border-purple-200';
-            case PrizeType.COUPON: return 'text-blue-500 bg-blue-50 px-2 py-1 border border-blue-200';
-            case PrizeType.POINT: return 'text-gray-600';
-            default: return 'text-gray-400';
-        }
-    };
-
-    const SortButton = ({ field, label, icon: Icon }: any) => (
-        <button 
-            onClick={() => handleSort(field)}
-            className={`flex items-center gap-1 px-3 py-1 text-xs font-bold border-2 transition-all ${
-                sortField === field 
-                ? 'bg-epe-neon text-black border-black shadow-[2px_2px_0_0_rgba(0,0,0,1)]' 
-                : 'bg-white text-gray-500 border-gray-300 hover:border-black'
-            }`}
-        >
-            <Icon size={14} />
-            {label}
-            {sortField === field && (
-                <ArrowUpDown size={12} className={sortDirection === 'asc' ? 'rotate-180' : ''} />
-            )}
-        </button>
-    );
-
     return (
-        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
-            <motion.div 
-                initial={{ y: 50, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                className="bg-white w-full max-w-4xl h-[85vh] flex flex-col border-4 border-black shadow-comic-lg relative"
-            >
-                {/* Header */}
-                <div className="bg-epe-yellow border-b-4 border-black p-4 flex justify-between items-center shrink-0">
-                    <h2 className="text-3xl font-comic text-black stroke-white drop-shadow-md">中奖风云榜 TOP LIST</h2>
-                    <button onClick={onClose} className="bg-black text-white p-1 hover:bg-gray-800"><X /></button>
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div className="bg-anime-dark border-2 border-anime-orange p-8 max-w-xl w-full shadow-neon-orange flex flex-col gap-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 w-20 h-20 bg-anime-orange opacity-10 rotate-45 translate-x-10 -translate-y-10" />
+                
+                <div className="flex justify-between items-center border-b border-gray-700 pb-4">
+                    <h3 className="text-2xl font-tech uppercase flex items-center gap-2 text-white">
+                        <FileSpreadsheet className="text-anime-orange" /> 导入积分 / IMPORT
+                    </h3>
+                    <button onClick={() => { playClick(); onClose(); }}><XCircle size={24} className="text-gray-400 hover:text-red-500" /></button>
                 </div>
 
-                {/* Stats & Controls Bar */}
-                <div className="bg-gray-100 p-4 border-b-2 border-black flex flex-col md:flex-row justify-between items-center gap-4 z-10 shadow-sm shrink-0">
-                     <div className="font-comic text-xl flex items-center gap-2 bg-white p-2 border-2 border-black shadow-[2px_2px_0_0_rgba(0,0,0,0.5)]">
-                        <span className="font-tech text-gray-500 text-sm uppercase">总抽奖人次</span>
-                        <span className="text-2xl font-black text-epe-pink">{logs.length}</span>
-                     </div>
-                     
-                     <div className="flex items-center gap-2 bg-white p-2 rounded border border-gray-300 w-full md:w-auto overflow-x-auto">
-                         <span className="font-bold text-xs text-gray-400 uppercase mr-2 whitespace-nowrap">排序方式:</span>
-                         <div className="flex gap-2">
-                            <SortButton field="timestamp" label="时间" icon={Clock} />
-                            <SortButton field="userName" label="姓名" icon={UserIcon} />
-                            <SortButton field="prizeName" label="奖品" icon={Gift} />
-                         </div>
-                     </div>
+                <div className="flex gap-4">
+                    <button 
+                        onClick={downloadTemplate}
+                        className="flex-1 bg-gray-800 hover:bg-gray-700 border border-gray-600 py-3 px-4 text-xs flex items-center justify-center gap-2 transition-colors uppercase font-bold text-white"
+                    >
+                        <Download size={16} /> 下载模版
+                    </button>
+                    <button 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex-1 bg-anime-blue/20 hover:bg-anime-blue/40 border border-anime-blue py-3 px-4 text-xs flex items-center justify-center gap-2 transition-colors uppercase font-bold text-anime-blue"
+                    >
+                        <Upload size={16} /> 上传 Excel
+                    </button>
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls, .csv" onChange={handleFileUpload} />
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 overflow-auto p-4 bg-comic-pattern">
-                    <div className="bg-white border-2 border-black shadow-comic">
-                        <table className="w-full border-collapse">
-                            <thead className="bg-black text-white font-tech uppercase text-sm sticky top-0 z-20">
-                                <tr>
-                                    <th className="p-3 text-left w-24">时间</th>
-                                    <th className="p-3 text-left">姓名</th>
-                                    <th className="p-3 text-left">奖品</th>
-                                </tr>
-                            </thead>
-                            <tbody className="font-sans text-sm divide-y divide-gray-200">
-                                {sortedLogs.map((log) => (
-                                    <tr key={log.id} className="hover:bg-yellow-50 transition-colors">
-                                        <td className="p-3 text-gray-500 font-mono align-middle">
-                                            <div className="text-xs">{new Date(log.timestamp).toLocaleDateString()}</div>
-                                            <div className="font-bold text-gray-800">{new Date(log.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
-                                        </td>
-                                        <td className="p-3 align-middle">
-                                            <div className="font-black text-black text-lg leading-tight">{log.userName}</div>
-                                        </td>
-                                        <td className="p-3 align-middle">
-                                            <span className={`inline-block rounded ${getPrizeStyle(log.prizeType)}`}>
-                                                {log.prizeName}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                                {logs.length === 0 && (
-                                    <tr><td colSpan={3} className="p-8 text-center text-gray-500 font-comic text-xl">NO DATA YET...</td></tr>
-                                )}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </motion.div>
+                <textarea 
+                    value={jsonInput}
+                    onChange={(e) => setJsonInput(e.target.value)}
+                    className="w-full h-40 bg-black/50 border border-gray-700 p-4 font-mono text-xs text-green-400 focus:outline-none focus:border-anime-orange resize-none"
+                    placeholder={'支持Excel复制粘贴或JSON格式...\nExample:\nNaruto  100\nSasuke  500'}
+                />
+                
+                <button onClick={handleImport} className="w-full bg-gradient-to-r from-anime-orange to-red-600 text-white py-4 font-tech text-xl uppercase tracking-widest hover:brightness-110 transition-all shadow-lg transform active:scale-95">
+                    确认导入数据库 / CONFIRM
+                </button>
+            </div>
         </div>
     );
 };
 
-// --- Views ---
-
-interface WelcomeViewProps {
-  inputName: string;
-  setInputName: (val: string) => void;
-  handleLogin: (e: React.FormEvent) => void;
-  setShowLeaderboard: (show: boolean) => void;
-}
-
-const WelcomeView: React.FC<WelcomeViewProps> = ({ inputName, setInputName, handleLogin, setShowLeaderboard }) => (
-  <motion.div 
-    initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-    className="relative max-w-md w-full p-8 z-10 flex flex-col items-center"
-  >
-    {/* Leaderboard Button - Fixed Position */}
-    <button 
-        onClick={() => setShowLeaderboard(true)}
-        className="fixed top-4 right-4 z-50 bg-white border-2 border-black px-4 py-2 shadow-comic font-comic text-lg text-black hover:bg-epe-yellow transition-transform hover:scale-105 active:scale-95 flex items-center gap-2"
-    >
-        <Trophy className="text-epe-gold fill-current" /> 
-        <span className="hidden md:inline">中奖风云榜</span>
-        <span className="md:hidden">榜单</span>
-    </button>
-
-    {/* Manga Panel Style Container */}
-    <div className="absolute inset-0 bg-white border-4 border-black shadow-comic-lg transform -skew-x-2 z-0"></div>
-    
-    <div className="relative z-10 text-center w-full flex flex-col items-center pt-6">
-        <div className="mb-8 flex flex-col items-center w-full">
-            <div className="inline-block bg-epe-pink text-white font-comic text-xl px-4 py-1 border-2 border-black -rotate-2 mb-6 shadow-comic">
-                WELCOME TO
-            </div>
-            
-            {/* Anime Style EPE Text */}
-            <h1 className="text-9xl font-tech font-black italic tracking-tighter leading-none transform -skew-x-12 select-none relative"
-                style={{
-                    color: 'white',
-                    WebkitTextStroke: '3px black',
-                    textShadow: '6px 6px 0px #000, 10px 10px 0px #ff0080' // Black shadow + Pink accent offset
-                }}
-            >
-                EPE
-                {/* Decorative element */}
-                <span className="absolute -top-4 -right-4 text-3xl text-epe-neon animate-bounce" style={{ textShadow: '2px 2px 0 #000', WebkitTextStroke: '1px black' }}>!</span>
-            </h1>
-
-            {/* Subtitle */}
-            <h2 className="text-3xl font-tech font-black text-black tracking-wider uppercase italic transform -skew-x-12 mt-4" style={{ textShadow: '2px 2px 0 #00f3ff' }}>
-                综合体能馆
-            </h2>
-            <div className="bg-black text-white px-2 py-0.5 text-xs font-bold tracking-[0.5em] uppercase mt-2 -skew-x-12">
-                HYPER GACHA SYSTEM
-            </div>
-        </div>
-
-      <form onSubmit={handleLogin} className="space-y-6 text-left w-full">
-        <div>
-            <label className="block font-comic text-xl text-black mb-1">YOUR NAME</label>
-            <input 
-                type="text" value={inputName} onChange={e => setInputName(e.target.value)}
-                className="w-full bg-gray-100 border-2 border-black p-3 font-bold text-black focus:bg-epe-neon/20 focus:outline-none focus:shadow-comic transition-all"
-                placeholder="输入姓名..."
-            />
-        </div>
-        <ComicButton onClick={handleLogin} className="w-full mt-4">
-            START MISSION
-        </ComicButton>
-      </form>
-    </div>
-  </motion.div>
-);
-
-interface ShopViewProps {
-  user: User | null;
-  activeTab: 'pull' | 'collection';
-  setActiveTab: (tab: 'pull' | 'collection') => void;
-  handleDraw: () => void;
-  handleLogout: () => void;
-  setShowAdmin: (show: boolean) => void;
-  setShowRecharge: (show: boolean) => void;
-  isOpening: boolean;
-}
-
-const ShopView: React.FC<ShopViewProps> = ({ user, activeTab, setActiveTab, handleDraw, handleLogout, setShowAdmin, setShowRecharge, isOpening }) => (
-  <div className="w-full max-w-5xl mx-auto flex flex-col h-full z-10 px-4">
-    {/* Manga Header */}
-    <div className="flex justify-between items-start mb-8 relative">
-       {/* User Badge */}
-       <div className="bg-white border-2 border-black p-2 pr-6 shadow-comic flex items-center gap-3 transform -skew-x-12 origin-top-left">
-           <div className="w-12 h-12 bg-black skew-x-12 ml-2 flex items-center justify-center border-2 border-epe-neon">
-               <UserIcon size={24} className="text-epe-neon" />
-           </div>
-           <div className="skew-x-12">
-               <div className="font-tech text-black text-lg leading-none uppercase">{user?.name}</div>
-           </div>
-       </div>
-       
-       {/* Stats & Controls */}
-       <div className="flex gap-4 items-center">
-          <div className="flex items-center transform skew-x-12 shadow-comic">
-            <div className="bg-black text-epe-yellow border-2 border-white border-r-0 px-4 py-2 font-tech text-xl flex items-center gap-2">
-                  <span className="-skew-x-12 flex items-center gap-2">
-                    <Wallet size={20} />
-                    {user?.points} PT
-                  </span>
-            </div>
-            <button 
-                onClick={() => setShowRecharge(true)}
-                className="bg-epe-neon hover:bg-white text-black border-2 border-black border-l-0 px-2 py-2 flex items-center justify-center transition-colors"
-                title="导入积分数据"
-            >
-                <Plus size={20} className="-skew-x-12" />
-            </button>
-          </div>
-
-          <button onClick={() => setShowAdmin(true)} className="bg-gray-800 p-2 border-2 border-white text-white hover:bg-gray-700 shadow-comic transition-transform active:translate-y-1">
-              <Settings size={20} />
-          </button>
-          <button 
-            onClick={handleLogout} 
-            className="bg-epe-pink p-2 border-2 border-black text-white hover:bg-red-600 shadow-comic transition-transform active:translate-y-1 cursor-pointer z-50"
-            title="退出登录"
-          >
-              <LogOut size={20} />
-          </button>
-       </div>
-    </div>
-
-    {/* Navigation Tabs (Comic Style) */}
-    <div className="flex justify-center mb-10 space-x-6">
-        <button 
-          onClick={() => setActiveTab('pull')}
-          className={`px-8 py-2 font-comic text-2xl border-2 border-black transition-all transform hover:-translate-y-1 ${activeTab === 'pull' ? 'bg-epe-neon text-black shadow-comic' : 'bg-gray-800 text-gray-400'}`}
-        >
-          抽卡中心
-        </button>
-        <button 
-          onClick={() => setActiveTab('collection')}
-          className={`px-8 py-2 font-comic text-2xl border-2 border-black transition-all transform hover:-translate-y-1 ${activeTab === 'collection' ? 'bg-epe-neon text-black shadow-comic' : 'bg-gray-800 text-gray-400'}`}
-        >
-          我的卡包
-        </button>
-    </div>
-
-    <div className="flex-1 flex flex-col items-center justify-center relative min-h-[500px]">
-      {activeTab === 'pull' ? (
-           <div className="flex flex-col items-center gap-12">
-              <div className="relative">
-                  {/* Speech Bubble */}
-                  <div className="absolute -top-12 -right-16 bg-white text-black font-comic px-4 py-2 rounded-xl border-2 border-black text-xl animate-bounce z-20">
-                      Top Prize: ¥100!
-                      <div className="absolute bottom-[-8px] left-4 w-4 h-4 bg-white border-r-2 border-b-2 border-black transform rotate-45"></div>
-                  </div>
-                  
-                  <CardPack 
-                      onClick={handleDraw} 
-                      disabled={user ? user.points < COST_PER_DRAW : true}
-                      isOpening={isOpening}
-                  />
-              </div>
-
-              <div className="text-center">
-                  <ComicButton 
-                      onClick={handleDraw}
-                      disabled={user ? user.points < COST_PER_DRAW : true}
-                      color={(user?.points || 0) >= COST_PER_DRAW ? 'neon' : 'dark'}
-                  >
-                      {isOpening ? 'OPENING...' : 'OPEN PACK'}
-                  </ComicButton>
-                  <div className="mt-3 font-tech text-gray-400 text-sm tracking-wider">
-                      COST: {COST_PER_DRAW} PT / DRAW
-                  </div>
-                  {(user?.points || 0) < COST_PER_DRAW && (
-                      <div className="mt-2 text-epe-pink font-bold animate-pulse">
-                          积分不足! 请联系管理员导入数据
-                      </div>
-                  )}
-              </div>
-           </div>
-      ) : (
-          <div className="w-full h-full bg-white/5 backdrop-blur-sm border-2 border-white/20 p-6 rounded-xl overflow-y-auto max-h-[600px] relative">
-              <div className="absolute top-0 right-0 bg-epe-yellow text-black font-bold px-4 py-1 font-tech">INVENTORY</div>
-              
-              {/* Fragments Section */}
-              <div className="mb-10">
-                  <h3 className="text-epe-neon font-comic text-3xl mb-6 flex items-center gap-2 drop-shadow-md">
-                      <Zap size={28} className="fill-current"/> LEGENDARY FRAGMENTS
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {Object.entries(FRAGMENT_DEFINITIONS).map(([fragId, name]) => {
-                          const count = user?.fragments[fragId] || 0;
-                          const isComplete = count >= FRAGMENTS_NEEDED;
-                          return (
-                              <div key={fragId} className={`p-4 border-2 border-black ${isComplete ? 'bg-gradient-to-r from-epe-gold to-yellow-300' : 'bg-gray-800'} relative shadow-comic group transition-transform hover:-translate-y-1`}>
-                                  <div className="flex justify-between items-start z-10 relative">
-                                      <div className={isComplete ? 'text-black' : 'text-white'}>
-                                          <div className="font-bold font-tech text-lg mb-1">{name}</div>
-                                          <div className="text-xs opacity-70">COLLECT {FRAGMENTS_NEEDED} TO REDEEM</div>
-                                      </div>
-                                      <div className={`text-4xl font-comic font-bold ${isComplete ? 'text-black' : 'text-epe-neon'}`}>
-                                          {count}/{FRAGMENTS_NEEDED}
-                                      </div>
-                                  </div>
-                                  {isComplete && (
-                                      <button className="w-full mt-4 bg-black text-white font-comic py-2 uppercase hover:bg-gray-800">
-                                          REDEEM REWARD!
-                                      </button>
-                                  )}
-                              </div>
-                          )
-                      })}
-                  </div>
-              </div>
-
-              {/* Inventory List */}
-              <h3 className="text-white font-comic text-3xl mb-4 flex items-center gap-2">
-                  <Gift size={28}/> LOOT HISTORY
-              </h3>
-              <div className="grid grid-cols-1 gap-3">
-                  {user?.inventory.slice().reverse().map((item, idx) => (
-                      <div key={idx} className="flex justify-between items-center bg-gray-900 border-l-4 border-epe-neon p-4 shadow-sm hover:bg-gray-800 transition-colors">
-                          <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded bg-gray-700 flex items-center justify-center text-xl">
-                                  {item.prizeName.includes('红包') ? '🧧' : item.prizeName.includes('积分') ? '🪙' : '🎁'}
-                              </div>
-                              <div>
-                                  <div className="text-lg font-bold font-sans text-white">{item.prizeName}</div>
-                                  <div className="text-xs text-gray-500 font-mono">{new Date(item.obtainedAt).toLocaleString()}</div>
-                              </div>
-                          </div>
-                          {item.isRedeemed ? (
-                              <span className="text-xs bg-gray-700 text-gray-400 px-2 py-1 rounded">CLAIMED</span>
-                          ) : (
-                              <span className="text-xs bg-epe-neon text-black font-bold px-2 py-1 rounded border border-black">NEW</span>
-                          )}
-                      </div>
-                  ))}
-                  {user?.inventory.length === 0 && <p className="text-gray-500 text-center py-10 font-comic text-xl">NO LOOT YET...</p>}
-              </div>
-          </div>
-      )}
-    </div>
-  </div>
-);
-
-const getPrizeTypeName = (type: PrizeType) => {
-  switch(type) {
-    case PrizeType.EMPTY: return 'MISS';
-    case PrizeType.POINT: return 'POINTS';
-    case PrizeType.CASH: return 'CASH';
-    case PrizeType.COUPON: return 'COUPON';
-    case PrizeType.PHYSICAL: return 'ITEM';
-    case PrizeType.FRAGMENT: return 'FRAGMENT';
-    default: return type;
-  }
-};
-
-interface ResultViewProps {
-  currentPrize: Prize | null;
-  closeResult: () => void;
-}
-
-const ResultView: React.FC<ResultViewProps> = ({ currentPrize, closeResult }) => {
-  if (!currentPrize) return null;
-  
-  const isGood = currentPrize.type !== PrizeType.EMPTY && currentPrize.type !== PrizeType.POINT;
-  const isRare = currentPrize.isRare;
-
-  return (
-      <div className="flex flex-col items-center justify-center h-full z-20 relative">
-          
-          {/* Background Burst for Rare Items */}
-          {isRare && (
-              <motion.div 
-                  initial={{ scale: 0 }} animate={{ scale: 1.5, rotate: 180 }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-                  className="absolute inset-0 bg-[conic-gradient(from_0deg,transparent_0_30deg,rgba(255,215,0,0.2)_30deg_60deg)] z-[-1]" 
-              />
-          )}
-
-          <motion.div
-              initial={{ scale: 0, rotate: -20 }}
-              animate={{ scale: 1, rotate: 0 }}
-              transition={{ type: "spring", bounce: 0.5 }}
-              className="perspective-1000"
-          >
-              <div className={`
-                  w-80 h-[500px] relative flex flex-col items-center p-2 border-[6px] border-black shadow-[10px_10px_0_0_rgba(0,0,0,1)]
-                  ${isRare ? 'bg-gradient-to-b from-yellow-300 via-yellow-500 to-yellow-600' : 
-                    isGood ? 'bg-gradient-to-b from-cyan-300 via-cyan-500 to-blue-600' : 
-                    'bg-gray-200'}
-              `}>
-                   {/* Card Frame Design */}
-                   <div className="w-full h-full border-2 border-white/50 flex flex-col items-center p-4 relative overflow-hidden">
-                       
-                       {/* Rarity Stars */}
-                       {isRare && (
-                           <div className="absolute top-2 left-2 text-yellow-100 flex gap-1">
-                               {'★★★★★'.split('').map((s,i) => <span key={i} className="drop-shadow-md">{s}</span>)}
-                           </div>
-                       )}
-
-                       {/* Image Area Placeholder */}
-                       <div className="w-full aspect-square bg-black/20 mt-6 border-2 border-black/50 flex items-center justify-center rounded-sm relative overflow-hidden">
-                            {/* Dynamic Icon based on type */}
-                            <div className="scale-150 transform transition-transform hover:scale-125 duration-500">
-                                {currentPrize.type === PrizeType.CASH && <span className="text-6xl">🧧</span>}
-                                {currentPrize.type === PrizeType.POINT && <Wallet size={80} className="text-white" />}
-                                {currentPrize.type === PrizeType.PHYSICAL && <Trophy size={80} className="text-white" />}
-                                {currentPrize.type === PrizeType.EMPTY && <RefreshCw size={80} className="text-gray-500" />}
-                                {currentPrize.type === PrizeType.FRAGMENT && <div className="text-6xl">🧩</div>}
-                                {currentPrize.type === PrizeType.COUPON && <div className="text-6xl font-bold text-white border-2 border-white rounded p-2">券</div>}
+const LeaderboardModal = ({ onClose }: any) => {
+    const [db, setDb] = useState<Record<string, number>>({});
+    useEffect(() => { setDb(getPointsDB()); }, []);
+    const sorted = Object.entries(db).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    return (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+            <div className="bg-anime-dark border-2 border-anime-blue w-full max-w-md max-h-[80vh] flex flex-col shadow-neon-blue">
+                <div className="bg-anime-blue/10 border-b border-anime-blue p-4 flex justify-between items-center">
+                    <h3 className="text-xl font-tech uppercase tracking-wider text-anime-blue flex items-center gap-2">
+                        <Trophy size={20} /> TOP PLAYERS
+                    </h3>
+                    <button onClick={() => { playClick(); onClose(); }} className="text-gray-400 hover:text-white"><XCircle size={20} /></button>
+                </div>
+                <div className="overflow-y-auto p-2">
+                    {sorted.map(([name, pts], i) => (
+                        <div key={name} className="flex items-center justify-between p-4 mb-2 bg-gray-800/50 border-l-2 border-transparent hover:border-anime-orange hover:bg-gray-800 transition-all">
+                            <div className="flex items-center gap-4">
+                                <span className={`font-tech text-xl italic w-8 ${i < 3 ? 'text-anime-yellow drop-shadow-md' : 'text-gray-600'}`}>#{i+1}</span>
+                                <span className="font-bold uppercase truncate max-w-[150px] text-white">{name}</span>
                             </div>
-                            {/* Shine Effect */}
-                            <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/30 to-transparent w-[200%] h-[200%] animate-spin-slow opacity-50"></div>
-                       </div>
-
-                       {/* Type Label */}
-                       <div className="mt-4 bg-black text-white px-3 py-1 font-tech text-xs tracking-widest uppercase skew-x-[-10deg]">
-                           {getPrizeTypeName(currentPrize.type)}
-                       </div>
-
-                       {/* Name */}
-                       <h2 className="text-3xl font-comic text-black mt-2 text-center leading-none drop-shadow-sm stroke-white">
-                           {currentPrize.name}
-                       </h2>
-                       
-                       {/* Description */}
-                       <div className="mt-auto bg-white/90 border-2 border-black p-2 w-full text-center font-sans text-xs font-bold text-black shadow-comic-hover">
-                           {currentPrize.type === PrizeType.EMPTY ? "Don't give up! Try again!" : "Item added to inventory!"}
-                       </div>
-                   </div>
-              </div>
-          </motion.div>
-
-          <motion.div 
-            initial={{ opacity: 0, y: 50 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.5 }}
-            className="mt-8 flex gap-4"
-          >
-              <ComicButton onClick={closeResult} color="red">
-                  CONTINUE
-              </ComicButton>
-          </motion.div>
-      </div>
-  );
+                            <span className="font-mono font-bold text-anime-blue">{pts} PTS</span>
+                        </div>
+                    ))}
+                    {sorted.length === 0 && <div className="p-8 text-center text-gray-500">NO DATA</div>}
+                </div>
+            </div>
+        </div>
+    );
 };
 
-// --- Main App Component ---
+// --- Main App ---
 
 const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -659,17 +445,40 @@ const App: React.FC = () => {
   const [showRecharge, setShowRecharge] = useState(false);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [activeTab, setActiveTab] = useState<'pull' | 'collection'>('pull');
-  
-  // Animation States
   const [isOpening, setIsOpening] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
-    const existing = getUser();
-    if (existing) {
-      setUser(existing);
-      setView('shop');
-    }
+    const init = async () => {
+        if (getCloudId()) { await syncFromCloud(); }
+        const existing = getUser();
+        if (existing) {
+          setUser(existing);
+          setView('shop');
+        }
+    };
+    init();
   }, []);
+
+  useEffect(() => {
+    if (!getCloudId()) return;
+    const intervalId = setInterval(async () => {
+        if (isOpening) return;
+        setIsSyncing(true);
+        try {
+            const hasChanges = await syncFromCloud();
+            const freshUser = getUser();
+            if (freshUser && user) {
+                if (freshUser.points !== user.points || freshUser.inventory.length !== user.inventory.length) {
+                    setUser(freshUser);
+                }
+            }
+        } finally {
+            setTimeout(() => setIsSyncing(false), 500);
+        }
+    }, 3000);
+    return () => clearInterval(intervalId);
+  }, [user, isOpening]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -680,7 +489,6 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-      // Direct logout for better UX
       setUser(null);
       localStorage.removeItem('epe_user'); 
       setView('welcome');
@@ -688,28 +496,27 @@ const App: React.FC = () => {
       setActiveTab('pull');
   };
 
-  const handleDraw = () => {
+  const handleDraw = async () => {
     if (!user || user.points < COST_PER_DRAW) {
-      // Trigger recharge modal if points are low
+      playClick();
       setShowRecharge(true);
       return;
     }
-    
-    // 1. Start Opening Animation (CardPack tears)
+    playOpen();
     setIsOpening(true);
-    
-    // 2. Wait for tear animation (0.5s shake + 0.4s rip)
-    setTimeout(() => {
-        // Perform calculation
-        const result = performDraw(user);
+    setTimeout(async () => {
+        const result = await performDraw(user);
         if (result) {
             setUser(result.updatedUser);
             setCurrentPrize(result.result);
-            // 3. Switch to result view
+            playWin();
             setView('result');
-            setIsOpening(false); // Reset opening state
+            setIsOpening(false);
+        } else {
+            setIsOpening(false);
+            alert("同步错误");
         }
-    }, 1500);
+    }, 1800);
   };
 
   const closeResult = () => {
@@ -718,18 +525,15 @@ const App: React.FC = () => {
   };
 
   const handleRechargeSuccess = () => {
-      // Refresh user data to show new points
       const updated = getUser();
       if (updated) setUser(updated);
   };
 
   return (
-    <div className="min-h-screen bg-comic-pattern text-white font-sans overflow-hidden flex flex-col relative">
-       {/* Global Speed Lines */}
-       <SpeedLines />
-
-       {/* Main Content Area */}
-       <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4">
+    <div className="min-h-screen font-sans overflow-hidden flex flex-col items-center justify-center relative bg-anime-dark text-white">
+       <BackgroundEffects />
+       
+       <div className="relative z-10 w-full h-full flex flex-col items-center justify-center p-4">
          <AnimatePresence mode="wait">
             {view === 'welcome' && (
                 <WelcomeView 
@@ -762,10 +566,10 @@ const App: React.FC = () => {
             )}
          </AnimatePresence>
        </div>
-
-       {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
-       {showRecharge && <RechargeModal onClose={() => setShowRecharge(false)} onSuccess={handleRechargeSuccess} />}
-       {showLeaderboard && <LeaderboardModal onClose={() => setShowLeaderboard(false)} />}
+       {showAdmin && <AdminPanel onClose={() => { playClick(); setShowAdmin(false); }} />}
+       {showRecharge && <RechargeModal onClose={() => { playClick(); setShowRecharge(false); }} onSuccess={handleRechargeSuccess} />}
+       {showLeaderboard && <LeaderboardModal onClose={() => { playClick(); setShowLeaderboard(false); }} />}
+       
     </div>
   );
 };

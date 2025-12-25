@@ -1,45 +1,49 @@
 
 import React, { useEffect, useState } from 'react';
-import { getLogs, resetSystem, getPointsDB, redeemLog, exportFullSystemData, importFullSystemData } from '../services/storage';
+import { getLogs, resetSystem, getPointsDB, redeemLog, getCloudId, setCloudId, syncFromCloud, pushToCloud } from '../services/storage';
 import { DrawLog, PrizeType } from '../types';
 import { PRIZE_POOL } from '../constants';
-import { Download, Trash2, CheckCircle, Clock, XCircle, Database, UploadCloud, Info } from 'lucide-react';
+// Add History to lucide-react imports to avoid conflict with global History interface
+import { Download, Trash2, CheckCircle, Clock, XCircle, Cloud, RefreshCw, Upload, Info, AlertTriangle, Zap, Database, History } from 'lucide-react';
 
 declare const XLSX: any;
 
 export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [logs, setLogs] = useState<DrawLog[]>([]);
   const [pointsDB, setPointsDB] = useState<Record<string, number>>({});
-  const [activeTab, setActiveTab] = useState<'logs' | 'probs' | 'users' | 'system'>('logs');
+  const [activeTab, setActiveTab] = useState<'logs' | 'users' | 'probs' | 'system'>('logs');
+  const [cloudId, setCloudIdState] = useState(getCloudId() || '');
+  const [syncLoading, setSyncLoading] = useState(false);
 
   useEffect(() => {
     setLogs(getLogs());
     setPointsDB(getPointsDB());
   }, []);
 
-  const getTypeColor = (type: PrizeType) => {
-    switch(type) {
-      case PrizeType.CASH: return 'text-green-400';
-      case PrizeType.FRAGMENT: return 'text-epe-gold';
-      case PrizeType.PHYSICAL: return 'text-purple-400';
-      default: return 'text-gray-400';
-    }
+  const handleCloudIdSave = () => {
+    setCloudId(cloudId);
+    alert('ID 已保存! // 云端同步 ID 已就绪！');
   };
 
-  const getTypeName = (type: PrizeType) => {
-    switch(type) {
-      case PrizeType.EMPTY: return '未中奖';
-      case PrizeType.POINT: return '积分';
-      case PrizeType.CASH: return '现金红包';
-      case PrizeType.COUPON: return '代金券';
-      case PrizeType.PHYSICAL: return '实物奖品';
-      case PrizeType.FRAGMENT: return '传说碎片';
-      default: return type;
-    }
+  const handleSyncPull = async () => {
+      setSyncLoading(true);
+      const success = await syncFromCloud();
+      setSyncLoading(false);
+      if (success) {
+          setLogs(getLogs());
+          setPointsDB(getPointsDB());
+      }
   };
 
-  const handleRedeem = (logId: string) => {
-    const updatedLogs = redeemLog(logId);
+  const handleSyncPush = async () => {
+      setSyncLoading(true);
+      await pushToCloud();
+      setSyncLoading(false);
+      alert('推送成功! // 本地数据已覆盖云端！');
+  };
+
+  const handleRedeem = async (logId: string) => {
+    const updatedLogs = await redeemLog(logId);
     setLogs([...updatedLogs]);
   };
 
@@ -51,122 +55,100 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
         }));
         const ws = XLSX.utils.json_to_sheet(data);
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "积分明细");
-        const date = new Date().toISOString().slice(0,10);
-        XLSX.writeFile(wb, `EPE_积分明细_${date}.xlsx`);
-    } catch (e) {
-        console.error("Export failed", e);
-        alert("导出失败");
-    }
-  };
-
-  const handleRestoreSystem = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-          const content = evt.target?.result as string;
-          if (importFullSystemData(content)) {
-              alert("系统数据已完全恢复！页面即将刷新。");
-              window.location.reload();
-          } else {
-              alert("恢复失败，请确保使用正确的 .json 备份文件。");
-          }
-      };
-      reader.readAsText(file);
+        XLSX.utils.book_append_sheet(wb, ws, "Points_Export");
+        XLSX.writeFile(wb, `EPE_ADMIN_DATA_${new Date().toISOString().slice(0,10)}.xlsx`);
+    } catch (e) { alert("导出失败"); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-gray-900 w-full max-w-6xl h-[85vh] rounded-2xl border-4 border-black shadow-[12px_12px_0_0_rgba(0,0,0,1)] flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="p-5 border-b-4 border-black flex justify-between items-center bg-epe-yellow">
-          <h2 className="text-2xl font-black font-tech text-black tracking-tighter italic">EPE ADMIN SYSTEM // 后台管理</h2>
-          <button onClick={onClose} className="bg-black text-white px-4 py-2 font-comic hover:bg-gray-800 transition-colors">CLOSE [X]</button>
+    <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
+      <div className="bg-anime-dark w-full max-w-6xl h-[90vh] border-2 border-anime-blue shadow-neon-blue flex flex-col overflow-hidden relative">
+        {/* Decorative Background for Admin */}
+        <div className="absolute inset-0 bg-comic-dots opacity-5 pointer-events-none" />
+
+        {/* Header - Comic Style */}
+        <div className="p-6 border-b border-anime-blue flex justify-between items-center bg-gray-900/50 relative z-10">
+          <div className="flex items-center gap-4">
+            <div className="bg-anime-blue text-black p-2 -rotate-3">
+              <Zap size={24} />
+            </div>
+            <h2 className="text-3xl font-tech italic text-white tracking-wider uppercase">EPE CORE SYSTEM</h2>
+          </div>
+          <button 
+            onClick={onClose} 
+            className="bg-red-600 text-white px-6 py-2 font-tech text-xl border border-red-400 hover:bg-red-500 transition-all active:scale-95"
+          >
+            EXIT [X]
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex bg-gray-800 border-b-2 border-black overflow-x-auto shrink-0">
-            <button onClick={() => setActiveTab('logs')} className={`flex-1 py-4 px-6 font-bold text-sm tracking-widest uppercase transition-all ${activeTab === 'logs' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
-                抽奖记录与核销
-            </button>
-            <button onClick={() => setActiveTab('users')} className={`flex-1 py-4 px-6 font-bold text-sm tracking-widest uppercase transition-all ${activeTab === 'users' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
-                学员积分档案
-            </button>
-            <button onClick={() => setActiveTab('probs')} className={`flex-1 py-4 px-6 font-bold text-sm tracking-widest uppercase transition-all ${activeTab === 'probs' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
-                奖池概率
-            </button>
-            <button onClick={() => setActiveTab('system')} className={`flex-1 py-4 px-6 font-bold text-sm tracking-widest uppercase transition-all ${activeTab === 'system' ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}>
-                系统同步
-            </button>
+        {/* Navigation Tabs - Skewed Blocks */}
+        <div className="flex bg-black p-2 gap-2 relative z-10">
+            {['logs', 'users', 'probs', 'system'].map((tab) => (
+                <button 
+                    key={tab} 
+                    onClick={() => setActiveTab(tab as any)} 
+                    className={`flex-1 py-3 px-4 font-tech text-lg tracking-widest uppercase transition-all skew-x-6 border-b-2
+                        ${activeTab === tab ? 'bg-anime-blue/20 text-anime-blue border-anime-blue shadow-[0_0_10px_rgba(56,182,255,0.3)]' : 'bg-transparent text-gray-500 border-transparent hover:text-white'}`}
+                >
+                    <span className="-skew-x-6 block">{tab === 'logs' ? '抽奖记录' : tab === 'users' ? '用户积分' : tab === 'probs' ? '奖池配置' : '云同步'}</span>
+                </button>
+            ))}
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-auto p-4 md:p-6 bg-comic-pattern">
+        {/* Content Area */}
+        <div className="flex-1 overflow-auto p-6 relative z-10">
             {activeTab === 'logs' && (
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center mb-6 bg-white border-2 border-black p-4 shadow-comic">
-                        <div className="flex items-center gap-4">
-                            <span className="font-tech text-black uppercase">Draw Logs: <span className="text-epe-pink text-2xl">{logs.length}</span></span>
+                <div className="space-y-6">
+                    <div className="flex justify-between items-center bg-gray-800 p-4 border-l-4 border-anime-orange">
+                        <div className="flex items-center gap-2 text-white">
+                           <History className="text-anime-orange" />
+                           <span className="font-mono uppercase">Total Logs: <span className="text-anime-orange text-2xl">{logs.length}</span></span>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-gray-400 italic">
-                            <Info size={14} /> 所有中奖历史均被永久保存，除非手动重置系统
-                        </div>
+                        <button onClick={handleSyncPull} className="bg-anime-blue text-black px-4 py-1 font-bold text-xs uppercase flex items-center gap-2 hover:bg-white">
+                           <RefreshCw size={14} className={syncLoading ? 'animate-spin' : ''} /> 刷新数据
+                        </button>
                     </div>
                     
-                    <div className="bg-white rounded-none overflow-hidden border-2 border-black shadow-comic overflow-x-auto">
-                        <table className="w-full text-left text-sm min-w-[700px]">
-                            <thead className="bg-black text-white font-tech uppercase sticky top-0 z-10">
+                    <div className="bg-gray-900 border border-gray-700 overflow-x-auto">
+                        <table className="w-full text-left text-sm min-w-[700px] text-gray-300">
+                            <thead className="bg-black text-anime-blue font-mono uppercase text-sm">
                                 <tr>
-                                    <th className="p-4 border-b-2 border-black">时间戳</th>
-                                    <th className="p-4 border-b-2 border-black">中奖人</th>
-                                    <th className="p-4 border-b-2 border-black">奖品明细</th>
-                                    <th className="p-4 border-b-2 border-black text-center">状态管理</th>
+                                    <th className="p-4">Time</th>
+                                    <th className="p-4">Trainer</th>
+                                    <th className="p-4">Item</th>
+                                    <th className="p-4 text-center">Action</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {logs.map((log) => {
-                                    const needsRedemption = log.prizeType !== PrizeType.EMPTY && log.prizeType !== PrizeType.POINT;
-                                    const isRedeemed = !!log.redeemedAt;
-                                    return (
-                                        <tr key={log.id} className={`transition-colors ${isRedeemed ? 'bg-green-50' : 'hover:bg-yellow-50'}`}>
-                                            <td className="p-4 text-gray-500 font-mono">
-                                                <div className="font-bold text-black">{new Date(log.timestamp).toLocaleDateString()}</div>
-                                                <div className="text-xs">{new Date(log.timestamp).toLocaleTimeString()}</div>
-                                            </td>
-                                            <td className="p-4"><div className="font-black text-lg text-black">{log.userName}</div></td>
-                                            <td className="p-4 font-medium">
-                                                <span className={`text-xs px-2 py-0.5 rounded border border-current mb-1 inline-block ${getTypeColor(log.prizeType)}`}>
-                                                    {getTypeName(log.prizeType)}
-                                                </span>
-                                                <div className="text-black font-bold text-base">{log.prizeName}</div>
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="flex flex-col items-center justify-center min-h-[60px]">
-                                                    {needsRedemption ? (
-                                                        isRedeemed ? (
-                                                            <div className="flex flex-col items-center text-green-600 bg-white border-2 border-green-600 px-4 py-2 shadow-[4px_4px_0_0_#16a34a]">
-                                                                <div className="flex items-center gap-2 font-black text-sm uppercase italic">
-                                                                    <CheckCircle size={18} /> 核销完成
-                                                                </div>
-                                                                <span className="text-[10px] mt-1 font-mono bg-green-600 text-white px-1">
-                                                                    {new Date(log.redeemedAt!).toLocaleString([], {month:'numeric', day:'numeric', hour:'2-digit', minute:'2-digit'})}
-                                                                </span>
-                                                            </div>
-                                                        ) : (
-                                                            <button onClick={() => handleRedeem(log.id)} className="group bg-epe-neon hover:bg-white text-black text-xs font-black py-2 px-6 border-2 border-black shadow-[4px_4px_0_0_rgba(0,0,0,1)] active:translate-y-1 active:shadow-none transition-all flex items-center gap-2 uppercase italic">
-                                                                点击核销奖品
-                                                            </button>
-                                                        )
-                                                    ) : (
-                                                        <div className="flex items-center gap-1 text-gray-400 font-bold italic text-xs uppercase"><XCircle size={14} /> 无需核销</div>
-                                                    )}
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                            <tbody className="divide-y divide-gray-800">
+                                {logs.map((log) => (
+                                    <tr key={log.id} className={`hover:bg-white/5 ${log.redeemedAt ? 'opacity-50' : ''}`}>
+                                        <td className="p-4 font-mono text-[10px] text-gray-500">{new Date(log.timestamp).toLocaleString()}</td>
+                                        <td className="p-4 font-bold text-white text-lg">{log.userName}</td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-0.5 text-[10px] font-bold uppercase inline-block mb-1 
+                                                ${log.prizeType === PrizeType.CASH ? 'bg-anime-orange text-black' : 'bg-gray-700 text-white'}`}>
+                                                {log.prizeType}
+                                            </span>
+                                            <div className="font-bold text-white">{log.prizeName}</div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex justify-center">
+                                                {log.redeemedAt ? (
+                                                    <div className="flex items-center gap-2 text-green-500 font-bold uppercase">
+                                                        <CheckCircle size={20} /> Redeemed
+                                                    </div>
+                                                ) : (log.prizeType === PrizeType.EMPTY || log.prizeType === PrizeType.POINT) ? (
+                                                    <span className="text-gray-600">--</span>
+                                                ) : (
+                                                    <button onClick={() => handleRedeem(log.id)} className="bg-anime-blue text-black text-xs font-bold px-6 py-2 hover:bg-white transition-all shadow-[0_0_10px_rgba(56,182,255,0.5)]">
+                                                        兑换核销
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
@@ -174,27 +156,25 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             )}
 
             {activeTab === 'users' && (
-                <div className="space-y-4">
-                    <div className="flex justify-between items-center mb-6 bg-white border-2 border-black p-5 shadow-comic">
-                        <div>
-                            <h3 className="text-black font-black text-xl italic uppercase tracking-tighter">Points Registry / 积分档案</h3>
-                            <p className="text-xs text-gray-500 font-bold">同步新 Excel 时，历史中奖记录不受影响</p>
+                <div className="space-y-6">
+                    <div className="flex justify-between items-end">
+                        <div className="bg-anime-orange text-black p-2 skew-x-6 px-8">
+                            <h3 className="font-tech text-xl italic uppercase -skew-x-6">TRAINER RANKINGS</h3>
                         </div>
-                        <button onClick={handleExportExcel} className="bg-black text-white px-6 py-3 font-tech italic hover:bg-epe-neon hover:text-black transition-all shadow-comic active:translate-y-1 flex items-center gap-2">
-                            <Download size={18} /> EXPORT EXCEL
+                        <button onClick={handleExportExcel} className="bg-gray-800 text-white px-6 py-2 font-mono text-sm border border-gray-600 hover:border-anime-blue hover:text-anime-blue transition-all">
+                            EXPORT .XLSX
                         </button>
                     </div>
-                    <div className="bg-white border-2 border-black shadow-comic overflow-x-auto">
-                        <table className="w-full text-left text-sm min-w-[400px]">
-                            <thead className="bg-black text-white font-tech uppercase">
-                                <tr><th className="p-4 border-b-2 border-black">#</th><th className="p-4 border-b-2 border-black">学员姓名</th><th className="p-4 border-b-2 border-black text-right">剩余积分 (PT)</th></tr>
+                    <div className="bg-gray-900 border border-gray-700">
+                        <table className="w-full text-left text-gray-300">
+                            <thead className="bg-black text-anime-orange font-mono text-sm uppercase">
+                                <tr><th className="p-4">Name</th><th className="p-4 text-right">Points</th></tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-200">
-                                {Object.entries(pointsDB).map(([name, points], idx) => (
-                                    <tr key={name} className="hover:bg-yellow-50 transition-colors">
-                                        <td className="p-4 text-gray-400 font-mono w-20">{idx + 1}</td>
-                                        <td className="p-4 text-black font-black text-lg">{name}</td>
-                                        <td className="p-4 text-right font-tech text-xl text-epe-pink">{points} <span className="text-xs text-black">PT</span></td>
+                            <tbody className="divide-y divide-gray-800">
+                                {Object.entries(pointsDB).map(([name, points]) => (
+                                    <tr key={name} className="hover:bg-white/5">
+                                        <td className="p-4 text-white font-bold text-xl uppercase italic">{name}</td>
+                                        <td className="p-4 text-right font-mono text-2xl text-anime-blue">{points} <span className="text-xs text-gray-500">PTS</span></td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -204,69 +184,70 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
             )}
 
             {activeTab === 'system' && (
-                <div className="max-w-2xl mx-auto space-y-8 py-10">
-                    <div className="bg-white border-4 border-black p-8 shadow-comic-lg">
-                        <h3 className="text-black font-comic text-3xl mb-4 italic flex items-center gap-3">
-                            <Database className="text-epe-pink" /> 跨设备数据同步
+                <div className="max-w-2xl mx-auto space-y-10 py-10">
+                    <div className="bg-gray-900 border border-anime-blue p-10 relative overflow-hidden">
+                         <div className="absolute inset-0 bg-comic-dots opacity-10" />
+                        <h3 className="text-white font-tech text-3xl mb-6 flex items-center gap-4 relative z-10">
+                            <Cloud className="text-anime-blue" size={40} /> SYNC CENTER
                         </h3>
-                        <p className="text-gray-600 text-sm mb-6 font-bold leading-relaxed">
-                            注意：由于这是离线 Web 应用，您的数据存储在当前浏览器的缓存中。<br/>
-                            如果您想在其他电脑或浏览器上看到相同的数据（包括中奖历史和核销状态），请通过下方功能进行导出与导入。
+                        <p className="text-gray-400 text-xs font-bold mb-8 leading-relaxed uppercase tracking-wider relative z-10">
+                            Connect multiple devices via Cloud ID.<br/>
+                            Powered by NPOINT JSON Storage.
                         </p>
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            <div className="space-y-4">
-                                <h4 className="font-tech text-black uppercase text-sm">Step 1: 导出全量备份</h4>
-                                <button onClick={exportFullSystemData} className="w-full bg-black text-white p-4 font-comic text-xl hover:bg-gray-800 transition-all flex flex-col items-center justify-center gap-2 border-2 border-black shadow-comic">
-                                    <Download size={24} />
-                                    <span>DOWNLOAD BACKUP</span>
-                                    <span className="text-[10px] opacity-50 font-sans">(.json 系统镜像)</span>
-                                </button>
+                        <div className="space-y-6 relative z-10">
+                            <div className="flex flex-col gap-2">
+                                <label className="text-xs font-bold text-anime-blue uppercase">Cloud Source ID</label>
+                                <div className="flex gap-4">
+                                    <input 
+                                        type="text" 
+                                        value={cloudId} 
+                                        onChange={(e) => setCloudIdState(e.target.value)}
+                                        className="flex-1 bg-black border border-gray-600 p-4 font-mono text-lg text-white focus:outline-none focus:border-anime-blue"
+                                        placeholder="API ID..."
+                                    />
+                                    <button onClick={handleCloudIdSave} className="bg-anime-blue text-black px-8 font-bold hover:bg-white">SAVE</button>
+                                </div>
                             </div>
 
-                            <div className="space-y-4">
-                                <h4 className="font-tech text-black uppercase text-sm">Step 2: 恢复/导入备份</h4>
-                                <div className="relative">
-                                    <input type="file" accept=".json" onChange={handleRestoreSystem} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
-                                    <button className="w-full bg-epe-neon text-black p-4 font-comic text-xl hover:bg-white transition-all flex flex-col items-center justify-center gap-2 border-2 border-black shadow-comic">
-                                        <UploadCloud size={24} />
-                                        <span>RESTORE SYSTEM</span>
-                                        <span className="text-[10px] opacity-50 font-sans">(上传备份文件)</span>
-                                    </button>
-                                </div>
+                            <div className="grid grid-cols-2 gap-6 pt-6">
+                                <button onClick={handleSyncPull} disabled={!cloudId || syncLoading} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 p-6 flex flex-col items-center gap-2 text-white">
+                                    <RefreshCw className={syncLoading ? 'animate-spin text-anime-blue' : ''} size={32} />
+                                    <span className="font-tech text-xl">PULL DATA</span>
+                                </button>
+                                <button onClick={handleSyncPush} disabled={!cloudId || syncLoading} className="bg-anime-blue/20 hover:bg-anime-blue/40 border border-anime-blue p-6 flex flex-col items-center gap-2 text-anime-blue">
+                                    <Upload size={32} />
+                                    <span className="font-tech text-xl">PUSH DATA</span>
+                                </button>
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-red-50 border-4 border-red-600 p-8 shadow-comic">
-                        <h3 className="text-red-600 font-comic text-3xl mb-4 italic flex items-center gap-3">
-                            <Trash2 /> 危险区域 / DANGER ZONE
-                        </h3>
-                        <p className="text-red-800 text-sm mb-6 font-bold">
-                            重置系统将抹除所有学员信息、当前积分以及全部中奖记录。此操作不可撤销，请务必先进行备份。
-                        </p>
-                        <button onClick={() => { if(confirm('⚠️ 警告：这将永久删除所有记录！\n确定要清空系统吗？')) resetSystem(); }} className="bg-red-600 text-white px-8 py-3 font-tech italic hover:bg-black transition-all">
-                            RESET ENTIRE SYSTEM
-                        </button>
+                    <div className="bg-red-900/20 border border-red-900 p-8">
+                        <div className="flex items-center gap-4 mb-4">
+                           <AlertTriangle className="text-red-500" size={32} />
+                           <h4 className="text-red-500 font-tech text-2xl uppercase">DANGER ZONE</h4>
+                        </div>
+                        <button onClick={() => {if(confirm('确认清除所有数据？')) resetSystem()}} className="bg-red-600 text-white px-8 py-3 font-bold uppercase hover:bg-red-500 w-full">RESET SYSTEM</button>
                     </div>
                 </div>
             )}
 
             {activeTab === 'probs' && (
-                <div className="bg-white border-2 border-black shadow-comic overflow-x-auto">
-                     <table className="w-full text-left text-sm min-w-[500px]">
-                        <thead className="bg-black text-white font-tech uppercase">
-                            <tr><th className="p-4 border-b-2 border-black">奖项名称</th><th className="p-4 border-b-2 border-black">类别</th><th className="p-4 border-b-2 border-black text-right">中奖概率</th></tr>
+                <div className="bg-gray-900 border border-gray-700">
+                    <table className="w-full text-left text-gray-300">
+                        <thead className="bg-black text-white font-mono text-sm uppercase">
+                            <tr><th className="p-4">Tier / Name</th><th className="p-4">Type</th><th className="p-4 text-right">Prob</th></tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200">
+                        <tbody className="divide-y divide-gray-800">
                             {PRIZE_POOL.map((prize) => (
-                                <tr key={prize.id} className="hover:bg-yellow-50 transition-colors">
-                                    <td className="p-4 flex items-center gap-2 text-black font-bold">
-                                        {prize.isRare && <span className="text-[10px] bg-epe-pink text-white px-2 py-0.5 font-black uppercase italic shadow-sm">RARE</span>}
+                                <tr key={prize.id} className="hover:bg-white/5">
+                                    <td className="p-4 flex items-center gap-3 text-white font-bold">
+                                        {prize.isRare && <span className="bg-anime-orange text-black text-[10px] px-2 py-0.5 skew-x-12">SSR</span>}
                                         {prize.name}
                                     </td>
-                                    <td className="p-4 text-gray-500 font-bold uppercase text-xs italic">{getTypeName(prize.type)}</td>
-                                    <td className="p-4 text-right font-tech text-lg text-black">{prize.probability.toFixed(2)}%</td>
+                                    <td className="p-4 text-gray-500 font-bold uppercase text-xs">{prize.type}</td>
+                                    <td className="p-4 text-right font-mono text-xl text-anime-blue">{prize.probability.toFixed(2)}%</td>
                                 </tr>
                             ))}
                         </tbody>
