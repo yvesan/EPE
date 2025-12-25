@@ -17,13 +17,59 @@ const CLOUD_API_BASE = 'https://api.npoint.io/';
 export const setCloudId = (id: string) => localStorage.setItem(KEYS.CLOUD_ID, id);
 export const getCloudId = () => localStorage.getItem(KEYS.CLOUD_ID);
 
+// 新增：申请一个新的云端 ID
+export const createCloudBin = async (): Promise<string | null> => {
+    try {
+        const initialData = {
+            pointsDB: {},
+            logs: [],
+            customLogo: null,
+            updatedAt: Date.now(),
+            readme: "Created by EPE Card Pack App"
+        };
+        
+        // 修复：添加 Content-Type 头，否则 npoint 可能返回 HTML 错误页
+        const response = await fetch(CLOUD_API_BASE, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(initialData)
+        });
+        
+        if (!response.ok) {
+            console.error("Failed to create bin, status:", response.status);
+            return null;
+        }
+
+        const data = await response.json();
+        // npoint returns { "id": "..." }
+        if (data && data.id) {
+            return data.id;
+        }
+        return null;
+    } catch (e) {
+        console.error("Failed to create cloud bin", e);
+        return null;
+    }
+};
+
 export const syncFromCloud = async (): Promise<boolean> => {
     const cloudId = getCloudId();
     if (!cloudId) return false;
     try {
         const response = await fetch(`${CLOUD_API_BASE}${cloudId}`);
+        // 修复：必须检查 response.ok，否则 404 页面会导致 json 解析失败
+        if (!response.ok) {
+            console.warn("Cloud ID not found or network error");
+            return false;
+        }
+
         const cloudData = await response.json();
         
+        // 简单的验证，确保数据格式正确
+        if (typeof cloudData !== 'object') return false;
+
         if (cloudData.pointsDB) localStorage.setItem(KEYS.POINTS_DB, JSON.stringify(cloudData.pointsDB));
         if (cloudData.logs) localStorage.setItem(KEYS.LOGS, JSON.stringify(cloudData.logs));
         if (cloudData.customLogo) localStorage.setItem(KEYS.CUSTOM_LOGO, cloudData.customLogo);
@@ -46,7 +92,10 @@ export const pushToCloud = async (): Promise<boolean> => {
             updatedAt: Date.now()
         };
         const response = await fetch(`${CLOUD_API_BASE}${cloudId}`, {
-            method: 'POST',
+            method: 'POST', // npoint uses POST to update specific bin
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(data)
         });
         return response.ok;

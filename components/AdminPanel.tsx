@@ -1,10 +1,10 @@
 
 import React, { useEffect, useState } from 'react';
-import { getLogs, resetSystem, getPointsDB, redeemLog, getCloudId, setCloudId, syncFromCloud, pushToCloud } from '../services/storage';
+import { getLogs, resetSystem, getPointsDB, redeemLog, getCloudId, setCloudId, syncFromCloud, pushToCloud, createCloudBin } from '../services/storage';
 import { DrawLog, PrizeType } from '../types';
 import { PRIZE_POOL } from '../constants';
 // Add History to lucide-react imports to avoid conflict with global History interface
-import { Download, Trash2, CheckCircle, Clock, XCircle, Cloud, RefreshCw, Upload, Info, AlertTriangle, Zap, Database, History } from 'lucide-react';
+import { Download, Trash2, CheckCircle, Clock, XCircle, Cloud, RefreshCw, Upload, Info, AlertTriangle, Zap, Database, History, Plus, ExternalLink } from 'lucide-react';
 
 declare const XLSX: any;
 
@@ -21,25 +21,53 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   }, []);
 
   const handleCloudIdSave = () => {
-    setCloudId(cloudId);
-    alert('ID 已保存! // 云端同步 ID 已就绪！');
+    const trimmedId = cloudId.trim();
+    setCloudId(trimmedId);
+    setCloudIdState(trimmedId);
+    alert('ID 已保存! // Cloud ID Saved!');
+  };
+
+  const handleGenerateId = async () => {
+      setSyncLoading(true);
+      const newId = await createCloudBin();
+      setSyncLoading(false);
+      
+      if (newId) {
+          setCloudIdState(newId);
+          setCloudId(newId);
+          // 立即推送一次当前数据，初始化该 ID
+          await pushToCloud(); 
+          alert(`成功生成新 ID: ${newId}\n请复制此 ID 到其他设备以同步数据。`);
+      } else {
+          alert('生成失败 (Network Error)。\n\n请尝试手动方法：\n1. 点击下方 "手动获取 ID" 链接\n2. 在 npoint.io 点击 "+ New"\n3. 点击 Save\n4. 复制浏览器地址栏末尾的 ID (例如: .../d236f...)\n5. 粘贴到上方输入框');
+      }
   };
 
   const handleSyncPull = async () => {
+      if (!cloudId) { alert("请先输入或生成 Cloud ID"); return; }
       setSyncLoading(true);
       const success = await syncFromCloud();
       setSyncLoading(false);
       if (success) {
           setLogs(getLogs());
           setPointsDB(getPointsDB());
+          alert('拉取成功! // 云端数据已覆盖本地！');
+      } else {
+          alert('拉取失败! \n请检查 ID 是否正确。\n如果是第一次使用该 ID，请先执行“PUSH DATA”初始化。');
       }
   };
 
   const handleSyncPush = async () => {
+      if (!cloudId) { alert("请先输入或生成 Cloud ID"); return; }
       setSyncLoading(true);
-      await pushToCloud();
+      const success = await pushToCloud();
       setSyncLoading(false);
-      alert('推送成功! // 本地数据已覆盖云端！');
+      
+      if (success) {
+        alert('推送成功! // 本地数据已覆盖云端！');
+      } else {
+        alert('推送失败! \nID 无效或云端服务拒绝连接。');
+      }
   };
 
   const handleRedeem = async (logId: string) => {
@@ -191,8 +219,10 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                             <Cloud className="text-anime-blue" size={40} /> SYNC CENTER
                         </h3>
                         <p className="text-gray-400 text-xs font-bold mb-8 leading-relaxed uppercase tracking-wider relative z-10">
-                            Connect multiple devices via Cloud ID.<br/>
-                            Powered by NPOINT JSON Storage.
+                            数据同步使用指南 (Tutorial):<br/>
+                            1. 点击 [生成新ID] 自动获取仓库。<br/>
+                            2. 如自动生成失败，请点击下方链接去 npoint.io 手动创建，并将 ID 填入框中。<br/>
+                            3. ID 只需要在一个设备生成，其他设备输入该 ID 即可共享数据。
                         </p>
 
                         <div className="space-y-6 relative z-10">
@@ -204,20 +234,35 @@ export const AdminPanel: React.FC<{ onClose: () => void }> = ({ onClose }) => {
                                         value={cloudId} 
                                         onChange={(e) => setCloudIdState(e.target.value)}
                                         className="flex-1 bg-black border border-gray-600 p-4 font-mono text-lg text-white focus:outline-none focus:border-anime-blue"
-                                        placeholder="API ID..."
+                                        placeholder="请生成或输入有效 ID..."
                                     />
-                                    <button onClick={handleCloudIdSave} className="bg-anime-blue text-black px-8 font-bold hover:bg-white">SAVE</button>
+                                    <button onClick={handleCloudIdSave} className="bg-gray-800 text-white px-4 font-bold hover:bg-white hover:text-black border border-gray-600">保存</button>
                                 </div>
+                                <button 
+                                    onClick={handleGenerateId} 
+                                    disabled={syncLoading}
+                                    className="w-full bg-gradient-to-r from-anime-orange to-red-500 text-white py-3 font-bold flex items-center justify-center gap-2 hover:brightness-110 active:scale-95 transition-all shadow-neon-orange"
+                                >
+                                    <Plus size={18} /> 自动生成新的云端 ID (Auto Generate)
+                                </button>
+                                <a 
+                                    href="https://npoint.io" 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="flex items-center justify-center gap-2 text-xs text-gray-500 hover:text-anime-blue mt-2 border-b border-transparent hover:border-anime-blue w-fit mx-auto pb-0.5"
+                                >
+                                    <ExternalLink size={12} /> 生成失败？点此手动前往 npoint.io 获取 ID (Manual)
+                                </a>
                             </div>
 
                             <div className="grid grid-cols-2 gap-6 pt-6">
                                 <button onClick={handleSyncPull} disabled={!cloudId || syncLoading} className="bg-gray-800 hover:bg-gray-700 border border-gray-600 p-6 flex flex-col items-center gap-2 text-white">
                                     <RefreshCw className={syncLoading ? 'animate-spin text-anime-blue' : ''} size={32} />
-                                    <span className="font-tech text-xl">PULL DATA</span>
+                                    <span className="font-tech text-xl">PULL DATA (下载)</span>
                                 </button>
                                 <button onClick={handleSyncPush} disabled={!cloudId || syncLoading} className="bg-anime-blue/20 hover:bg-anime-blue/40 border border-anime-blue p-6 flex flex-col items-center gap-2 text-anime-blue">
                                     <Upload size={32} />
-                                    <span className="font-tech text-xl">PUSH DATA</span>
+                                    <span className="font-tech text-xl">PUSH DATA (上传)</span>
                                 </button>
                             </div>
                         </div>
