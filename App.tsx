@@ -104,17 +104,18 @@ const LoginForm: React.FC<LoginProps> = ({ onLogin, isAdminMode, toggleAdmin, lo
             </form>
         )}
         
-        <div className="mt-8 text-center">
+        <div className="mt-8 text-center pt-4 border-t border-white/10">
             <button 
                 type="button"
                 onClick={() => {
                     setIsStaffLogin(!isStaffLogin);
                     setPassword('');
                 }} 
-                className="text-xs text-gray-500 hover:text-white underline cursor-pointer px-4 py-2 transition-colors"
+                className={`text-sm px-4 py-2 rounded-full transition-all ${isStaffLogin ? 'bg-gray-700 text-white' : 'bg-black/40 text-gray-400 hover:text-white border border-gray-600'}`}
             >
-                {isStaffLogin ? '← 返回学员登录' : '工作人员入口 (需密码)'}
+                {isStaffLogin ? '← 返回学员登录' : '🔐 工作人员入口 (需密码)'}
             </button>
+            <p className="text-[10px] text-gray-600 mt-4 font-mono">System v1.2</p>
         </div>
       </div>
     </div>
@@ -260,34 +261,38 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
 
     return (
-        <div className="min-h-screen bg-gray-900 text-white p-4 md:p-8 pt-16">
+        <div className="min-h-screen bg-gray-900 text-white p-4 pt-16">
             <div className="max-w-6xl mx-auto">
-                <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold text-epe-blue">管理后台</h1>
-                        <p className="text-gray-400 text-sm mt-1">EPE PERFORMANCE SYSTEM</p>
+                {/* Admin Header */}
+                <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4 border-b border-gray-700 pb-4">
+                    <div className="text-center md:text-left">
+                        <h1 className="text-2xl font-bold text-epe-blue">管理后台</h1>
+                        <p className="text-gray-400 text-xs">EPE ADMIN PANEL</p>
                     </div>
-                    <div className="flex gap-4">
-                        <div className="bg-gray-800 p-1 rounded-lg flex">
-                            <button 
-                                onClick={() => setActiveTab('redeem')}
-                                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'redeem' ? 'bg-epe-blue text-black shadow-lg' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                🎁 奖品核销
-                            </button>
-                            <button 
-                                onClick={() => setActiveTab('users')}
-                                className={`px-4 py-2 rounded-md text-sm font-bold transition-all ${activeTab === 'users' ? 'bg-epe-purple text-white shadow-lg' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                👥 学员管理 (充值)
-                            </button>
-                        </div>
-                        <button onClick={onBack} className="px-6 py-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors">退出</button>
+                    
+                    <div className="flex gap-2">
+                        <button onClick={onBack} className="px-4 py-2 bg-gray-800 border border-gray-600 rounded text-sm hover:bg-gray-700">← 退出系统</button>
                     </div>
                 </div>
 
+                {/* Tab Navigation (Big & Clear) */}
+                <div className="flex gap-2 mb-8 bg-gray-800/50 p-2 rounded-xl">
+                    <button 
+                        onClick={() => setActiveTab('redeem')}
+                        className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm md:text-base transition-all flex items-center justify-center gap-2 ${activeTab === 'redeem' ? 'bg-epe-blue text-black shadow-lg scale-[1.02]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    >
+                        🎁 奖品核销
+                    </button>
+                    <button 
+                        onClick={() => setActiveTab('users')}
+                        className={`flex-1 py-3 px-4 rounded-lg font-bold text-sm md:text-base transition-all flex items-center justify-center gap-2 ${activeTab === 'users' ? 'bg-epe-purple text-white shadow-lg scale-[1.02]' : 'text-gray-400 hover:text-white hover:bg-white/5'}`}
+                    >
+                        👥 学员管理 (充值)
+                    </button>
+                </div>
+
                 {activeTab === 'redeem' ? (
-                    <div className="bg-gray-800 rounded-xl overflow-hidden shadow-xl border border-gray-700">
+                    <div className="bg-gray-800 rounded-xl overflow-hidden shadow-xl border border-gray-700 animate-pop">
                          <div className="p-4 border-b border-gray-700 flex justify-between items-center">
                             <h3 className="font-bold text-lg">核销记录列表</h3>
                             <button onClick={fetchRecords} className="text-sm bg-gray-700 hover:bg-gray-600 px-3 py-1 rounded">↻ 刷新</button>
@@ -339,7 +344,7 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         </div>
                     </div>
                 ) : (
-                    <div className="space-y-4">
+                    <div className="space-y-4 animate-pop">
                          {/* User Management Toolbar */}
                         <div className="bg-gray-800 p-4 rounded-xl border border-gray-700 flex flex-col md:flex-row justify-between gap-4">
                              <input 
@@ -349,7 +354,7 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                                 className="bg-black/30 border border-gray-600 rounded px-4 py-2 text-white focus:border-epe-purple focus:outline-none w-full md:w-64"
                              />
-                             <div className="text-sm text-gray-400 flex items-center">
+                             <div className="text-sm text-gray-400 flex items-center justify-end">
                                  共找到 {users.length} 位学员
                              </div>
                         </div>
@@ -359,7 +364,7 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 <div className="col-span-full py-12 text-center text-gray-500">正在获取学员数据...</div>
                             ) : (
                                 users.map(u => (
-                                    <div key={u.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg flex flex-col justify-between">
+                                    <div key={u.id} className="bg-gray-800 rounded-xl p-4 border border-gray-700 shadow-lg flex flex-col justify-between hover:border-epe-purple/50 transition-colors">
                                         <div className="flex justify-between items-start mb-4">
                                             <div>
                                                 <h3 className="text-xl font-bold text-white">{u.name}</h3>
@@ -384,7 +389,7 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
                                         <button 
                                             onClick={() => setEditingUser(u)}
-                                            className="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm font-bold transition-colors border border-gray-600 hover:border-gray-500"
+                                            className="w-full py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-bold transition-colors border border-gray-600 hover:border-epe-purple hover:text-white"
                                         >
                                             ✏️ 修改/充值积分
                                         </button>
@@ -398,8 +403,8 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
             {/* Edit Points Modal */}
             {editingUser && (
-                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4">
-                    <div className="bg-gray-800 rounded-xl p-6 max-w-sm w-full border border-gray-600 shadow-2xl">
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[100] p-4 backdrop-blur-sm">
+                    <div className="bg-gray-800 rounded-xl p-6 max-w-sm w-full border border-gray-600 shadow-2xl animate-pop">
                         <h3 className="text-xl font-bold mb-1">积分变动: {editingUser.name}</h3>
                         <p className="text-gray-400 text-sm mb-6">当前余额: <span className="text-epe-gold">{editingUser.points}</span></p>
                         
@@ -414,9 +419,9 @@ const AdminPanel: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                                 className="w-full bg-black/50 border border-gray-500 rounded px-4 py-3 text-xl text-white focus:border-epe-blue focus:outline-none"
                             />
                             <div className="flex gap-2 mt-2">
-                                <button onClick={() => setPointsDelta('100')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs text-green-300">+100</button>
-                                <button onClick={() => setPointsDelta('500')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs text-green-300">+500</button>
-                                <button onClick={() => setPointsDelta('-30')} className="bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-xs text-red-300">-30</button>
+                                <button onClick={() => setPointsDelta('100')} className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs font-bold text-green-300 border border-green-900">+100</button>
+                                <button onClick={() => setPointsDelta('500')} className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs font-bold text-green-300 border border-green-900">+500</button>
+                                <button onClick={() => setPointsDelta('-30')} className="bg-gray-700 hover:bg-gray-600 px-3 py-1.5 rounded text-xs font-bold text-red-300 border border-red-900">-30</button>
                             </div>
                         </div>
 
